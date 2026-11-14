@@ -131,3 +131,10 @@ def test_slot_guard_blocks_second_run_same_hour(tmp_path, monkeypatch):
     main.mark_slot(t, posted=True)
     assert main.slot_done(t)
     assert not main.slot_done(datetime(2026, 11, 14, 14, 0, tzinfo=S.TZ))
+
+
+def test_end_time_shown_only_when_close():
+    soon = scoring.evaluate(offer(end=NOW_TS + 2 * 3600), [], TODAY, NOW_TS)
+    late = scoring.evaluate(offer(dkp=2, end=NOW_TS + 11 * 3600), [], TODAY, NOW_TS)
+    assert "⏰ تا 15:00" in digest._fmt_item(1, soon, NOW)
+    assert "⏰" not in digest._fmt_item(1, late, NOW)

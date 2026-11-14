@@ -51,3 +51,4 @@ QUIET_HOURS = range(1, 8)   # no posts between 01:00 and 07:59 Tehran
 MESSAGE_LIMIT = 3800        # Telegram's hard limit is 4096
 SEND_DELAY = 1.5            # seconds between messages
 MAX_WAIT_FOR_HOUR = 15 * 60 # wait at most this long to land exactly on the hour
+END_SHOW_HOURS = 6          # show the deal end time only when it ends within this many hours

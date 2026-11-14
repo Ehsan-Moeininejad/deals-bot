@@ -55,9 +55,9 @@ def _fmt_item(i: int, o: dict, now: datetime) -> str:
     parts = [f"−{o['discount']}%", f"{o['price']:,} تومان", f"⭐ {o['rating']:.1f}"]
     if o["ends_at"]:
         left = o["ends_at"] - now.timestamp()
-        if 0 < left <= 24 * 3600:
+        if 0 < left <= S.END_SHOW_HOURS * 3600:
             end = datetime.fromtimestamp(o["ends_at"], S.TZ)
-            parts.append(f"⏰ {end:%H:%M}")
+            parts.append(f"⏰ تا {end:%H:%M}")
     if o.get("repriced"):
         parts.append("📉 افت قیمت")
     return f"{i}. <a href=\"{url}\">{title}</a>\n\u200f" + " | ".join(parts)
