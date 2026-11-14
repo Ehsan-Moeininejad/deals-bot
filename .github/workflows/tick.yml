@@ -1,0 +1,98 @@
+name: tick
+
+on:
+  # Backup only. cron-job.org is the main trigger (minute 48 Tehran).
+  # GitHub cron is UTC: minute 22 UTC = minute 52 Tehran (UTC+3:30).
+  # If the main run already handled this hour, the backup does nothing
+  # (see last_slot.json in the state repo).
+  schedule:
+    - cron: "22 * * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run (digest)"
+        default: "digest"
+        required: true
+      force:
+        description: "true = post even if there are few new offers or it is quiet hours"
+        default: "false"
+        required: true
+
+permissions:
+  contents: read
+
+# Two runs never overlap, so they never fight over the state files.
+concurrency:
+  group: deals-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Check out the private state repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deals-state
+          token: ${{ secrets.STATE_PAT }}
+          path: state
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run
+        id: run
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+          LIVE: ${{ vars.LIVE }}
+          PAUSED: ${{ vars.PAUSED }}
+          STATE_DIR: state
+          # scheduled runs have no inputs: fall back to digest / false
+          JOB: ${{ inputs.job || 'digest' }}
+          FORCE: ${{ inputs.force || 'false' }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            python -m app.main "$JOB" --force
+          else
+            python -m app.main "$JOB"
+          fi
+
+      - name: Save state
+        if: always()
+        working-directory: state
+        run: |
+          git config user.name "deals-bot"
+          git config user.email ""   # no address needed for the private state repo
+          git add -A
+          if git diff --staged --quiet; then
+            echo "state unchanged"
+            exit 0
+          fi
+          git commit -m "state $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push || (git pull --rebase && git push)
+
+      # Alerts the admin when something failed OUTSIDE our own code
+      # (expired token, empty state repo, GitHub outage). Failures inside the
+      # bot already send their own alert, so no duplicate message here.
+      - name: Alert admin on workflow failure
+        if: failure() && steps.run.outcome != 'failure'
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${ADMIN_CHAT_ID}" \
+            --data-urlencode "text=⚠️ اجرای tick قبل از شروع بات شکست خورد (احتمالاً توکن یا ریپوی state): ${RUN_URL}" > /dev/null || true
