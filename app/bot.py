@@ -18,6 +18,7 @@ from . import digest
 from . import rules as R
 from . import settings as S
 from . import state
+from . import vouchers as V
 from .telegram import Telegram, TelegramError
 
 log = logging.getLogger("bot")
@@ -44,6 +45,7 @@ HELP = (
     "📖 <b>راهنمای تخفیف‌یاب</b>\n\n"
     "🛠 <b>ساخت قانون</b> — دکمه‌ی منو یا پایین صفحه\n"
     "📋 /rules — قانون‌های من و حذف آن‌ها\n"
+    "🎟 /codes — کدهای تخفیف فعال دیجی‌کالا\n"
     "🏷 /brand — برند شامل یا مستثنا، مثال: <code>/brand 1 سامسونگ -متفرقه</code>\n"
     "⏸ /pause · ▶️ /resume — توقف و ادامه‌ی ارسال\n"
     "🗂 /export — همه‌ی داده‌ی ذخیره‌شده‌ی من\n"
@@ -55,6 +57,7 @@ HELP = (
 COMMANDS = [
     ("start", "شروع و قانون‌های آماده"),
     ("rules", "قانون‌های من"),
+    ("codes", "کدهای تخفیف فعال دیجی‌کالا"),
     ("brand", "برند شامل یا مستثنا برای یک قانون"),
     ("pause", "توقف ارسال"),
     ("resume", "ادامه‌ی ارسال"),
@@ -141,7 +144,8 @@ def app_keyboard(bot_username: str) -> dict:
 def welcome_markup(bot_username: str) -> dict:
     presets = [{"text": t, "callback_data": f"p:{c}"} for t, c in PRESETS]
     rows = [presets[i:i + 2] for i in range(0, len(presets), 2)]
-    rows.append([{"text": "🛠 ساخت قانون دلخواه", "url": builder_url(bot_username)}])
+    rows.append([{"text": "🛠 ساخت قانون دلخواه", "url": builder_url(bot_username)},
+                 {"text": "🎟 کدهای تخفیف", "callback_data": "c:"}])
     return {"inline_keyboard": rows}
 
 
@@ -252,6 +256,27 @@ class Bot:
         self.reply(cid, f"✅ <b>برند به‌روز شد</b>\n{html.escape(R.describe(rule, chr(10)))}\n\n{preview(rule)}",
                    after_save_markup(self.username))
 
+    def codes(self, cid: str) -> None:
+        items = state.read("vouchers_latest.json", [])
+        u = self.user(cid)
+        on = bool(u.get("codes"))
+        toggle = {"text": "🔕 کدهای جدید را دیگر نفرست" if on else "🔔 کدهای جدید را برایم بفرست",
+                  "callback_data": "v:0" if on else "v:1"}
+        markup = {"inline_keyboard": [[toggle], [{"text": "🎟 صفحه‌ی همه‌ی کدها", "url": V.PAGE_URL}]]}
+        if not items:
+            self.reply(cid, "🎟 فهرست کدها هنوز آماده نیست؛ کمی بعد دوباره /codes را بفرست.", markup)
+            return
+        msgs = V.render(items, f"🎟 <b>کدهای تخفیف فعال دیجی‌کالا</b> ({len(items)} کد)")
+        for i, m in enumerate(msgs):
+            self.reply(cid, m, markup if i == len(msgs) - 1 else None)
+
+    def set_codes(self, cid: str, on: bool) -> None:
+        u = self.user(cid)
+        u["codes"] = on
+        self.touch(u)
+        self.reply(cid, "🔔 از این به بعد کدهای تخفیف تازه را برایت می‌فرستم." if on
+                   else "🔕 دیگر کد تخفیف نمی‌فرستم. هر وقت خواستی /codes را بزن.")
+
     def export(self, cid: str) -> None:
         u = self.user(cid, create=False)
         data = {"chat_id": cid, **u} if u else {"chat_id": cid, "rules": []}
@@ -293,6 +318,8 @@ class Bot:
             self.add_rule(cid, args[0])
         elif cmd == "/rules":
             self.list_rules(cid)
+        elif cmd == "/codes":
+            self.codes(cid)
         elif cmd == "/del" and args and args[0].isdigit():
             self.delete_rule(cid, index=int(args[0]))
         elif cmd == "/brand":
@@ -325,6 +352,10 @@ class Bot:
             self.delete_rule(cid, rule_id=int(data[2:]))
         elif data == "l:":
             self.list_rules(cid)
+        elif data == "c:":
+            self.codes(cid)
+        elif data in ("v:0", "v:1"):
+            self.set_codes(cid, data == "v:1")
         elif data == "z:":
             u = self.user(cid)
             u["paused"] = True
@@ -366,5 +397,9 @@ def run(tg: Telegram) -> int:
             state.write("users.json", bot.users)
         if time.time() >= deadline:
             break
+    try:
+        V.run(tg, bot.users)
+    except Exception:  # noqa: BLE001  vouchers must never break the bot
+        log.exception("voucher check failed")
     log.info("bot: %s update(s), %s repl(ies), %s user(s)", handled, bot.sent, len(bot.users))
     return 0
