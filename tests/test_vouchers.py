@@ -99,3 +99,10 @@ def test_expired_codes_are_struck_through(tmp_state):
     assert V.mark_expired(TG(), {"RVFGQTZZ"}) == 1          # the promo code left the page
     assert "⌛️" in calls[0]["text"] and calls[0]["message_id"] == 77
     assert V.mark_expired(TG(), {"RVFGQTZZ"}) == 0          # not edited twice
+
+
+def test_codes_only_between_8_and_midnight(tmp_state):
+    from datetime import datetime
+    assert not V.due(datetime(2026, 11, 16, 0, 35))
+    assert not V.due(datetime(2026, 11, 16, 7, 40))
+    assert V.due(datetime(2026, 11, 16, 8, 31)) and V.due(datetime(2026, 11, 16, 23, 31))

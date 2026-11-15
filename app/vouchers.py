@@ -170,7 +170,7 @@ CHANNEL_MARKUP = channel_markup()
 
 def due(now: datetime) -> bool:
     """Once per hour, after minute VOUCHER_MINUTE, outside quiet hours."""
-    if now.hour in S.QUIET_HOURS or now.minute < S.VOUCHER_MINUTE:
+    if now.hour in S.VOUCHER_QUIET_HOURS or now.minute < S.VOUCHER_MINUTE:
         return False
     return state.read("vouchers_slot.json", {}).get("slot") != now.strftime("%Y-%m-%dT%H")
 

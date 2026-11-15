@@ -60,7 +60,8 @@ MAX_ONGOING = 5
 MIN_NEW_TO_POST = 3         # fewer new offers than this = skip this hour
 RESEND_HOURS = 24           # an offer is not re-posted within this window...
 REPRICE_DROP = 0.05         # ...unless its price dropped by at least 5%
-QUIET_HOURS = range(1, 8)   # no posts between 01:00 and 07:59 Tehran
+QUIET_HOURS = range(1, 8)   # channel + personal: from 08:00 to the 00:00 post (last one), nothing 01:00-07:59
+VOUCHER_QUIET_HOURS = range(0, 8)  # codes: 08:30 ... 23:30 (none after midnight)
 MESSAGE_LIMIT = 3800        # Telegram's hard limit is 4096
 SEND_DELAY = 1.5            # seconds between messages
 MAX_WAIT_FOR_HOUR = 15 * 60 # wait at most this long to land exactly on the hour

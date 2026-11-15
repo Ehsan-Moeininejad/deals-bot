@@ -257,7 +257,8 @@ def llm_line(context: dict) -> str | None:
                 line = clean(_call(p, key, model, prompt), allowed)
             except Exception as exc:  # noqa: BLE001  timeout, 429, 5xx, bad JSON: switch at once
                 _down[tag] = time.time()
-                log.info("copy: %s unavailable (%s), switching", tag, type(exc).__name__)
+                code = getattr(getattr(exc, "response", None), "status_code", "")
+                log.info("copy: %s unavailable (%s %s), switching", tag, type(exc).__name__, code)
                 continue
             if line:
                 log.info("copy: line from %s in %.1fs", tag, time.time() - t0)
