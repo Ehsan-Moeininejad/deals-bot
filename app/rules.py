@@ -17,10 +17,10 @@ A rule is a small dict, stored only in the private state repo:
 Every field is optional; an empty rule matches every offer.
 
 Compact form (used in t.me/<bot>?start=<payload> and in /add):
-    c05_d30_a20_p0-200_r40_v20_md
+    c05_d30_a2000_p0-20000_r40_v20_md
     c   category positions in base36, one character each
-    d   min discount %          a   min discount amount, in units of 100,000 Toman
-    p   price range min-max, in units of 100,000 Toman (max 0 = no limit)
+    d   min discount %          a   min discount amount, in thousand Toman
+    p   price range min-max, in thousand Toman (max 0 = no limit)
     r   min rating x10          v   min votes          m   i or d
     s   min seller rating x10   f   delivery letters (j n w)   q   flag letters (o l)
 Only [A-Za-z0-9_-] is used and it stays under Telegram's 64-character limit.
@@ -33,7 +33,7 @@ import re
 
 from . import settings as S
 
-UNIT = 100_000  # Toman per unit in the compact form
+UNIT = 1_000  # Toman per unit in the compact form (= thousand Toman)
 B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 EMPTY = {"cats": [], "pmin": 0, "pmax": 0, "dmin": 0, "amin": 0,
@@ -143,9 +143,11 @@ def from_json(raw: str) -> dict:
 
 
 def _toman(n: int) -> str:
+    """Readable amount: «2.5 میلیون» or «350 هزار»."""
     if n >= 1_000_000 and n % 100_000 == 0:
-        v = n / 1_000_000
-        return f"{v:g} میلیون"
+        return f"{n / 1_000_000:g} میلیون"
+    if n >= 1_000 and n % 1_000 == 0:
+        return f"{n // 1_000:,} هزار"
     return f"{n:,}"
 
 

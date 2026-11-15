@@ -55,7 +55,7 @@ def test_enrich_keeps_low_rated_offers_for_rules():
 # ---- rule format -------------------------------------------------------------------------
 
 def test_compact_roundtrip():
-    rule = R.parse_compact("c0a_d30_a20_p5-200_r42_v50_md")
+    rule = R.parse_compact("c0a_d30_a2000_p500-20000_r42_v50_md")
     assert rule["cats"] == [0, 10]
     assert rule["dmin"] == 30 and rule["amin"] == 2_000_000
     assert (rule["pmin"], rule["pmax"]) == (500_000, 20_000_000)
@@ -87,15 +87,16 @@ def test_matching():
     assert R.matches(ok, e)
     assert not R.matches(R.parse_compact("c1"), e)              # other category
     assert not R.matches(R.parse_compact("d40"), e)             # discount too low
-    assert not R.matches(R.parse_compact("a5"), e)              # saving < 500k
-    assert not R.matches(R.parse_compact("p0-5"), e)            # price 800k > 500k
+    assert not R.matches(R.parse_compact("a500"), e)            # saving 400k < 500k
+    assert not R.matches(R.parse_compact("p0-500"), e)          # price 800k > 500k
     ok["bout"] = ["B"]
     assert not R.matches(ok, e)                                 # brand "B" excluded
 
 
 def test_describe_is_readable():
-    text = R.describe(R.parse_compact("c0_d30_a20_p0-200_r40_mi"))
+    text = R.describe(R.parse_compact("c0_d30_a2000_p0-20000_r40_mi"))
     assert "کالای دیجیتال" in text and "تخفیف ≥ 30%" in text and "2 میلیون" in text
+    assert "350 هزار" in R.describe(R.parse_compact("a350"))
 
 
 # ---- bot -----------------------------------------------------------------------------------

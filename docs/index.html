@@ -59,14 +59,14 @@
 
   <section>
     <h2>حداقل مبلغ تخفیف</h2>
-    <label style="font-size:13.5px;color:var(--muted)">میلیون تومان (0 = مهم نیست)<input type="number" id="a" min="0" step="0.1" value="0"></label>
+    <label style="font-size:13.5px;color:var(--muted)">هزار تومان (0 = مهم نیست) — مثلاً 500 یعنی 500 هزار تومان<input type="number" id="a" min="0" step="50" value="0"></label>
   </section>
 
   <section>
     <h2>بازه‌ی قیمت</h2>
     <div class="row">
-      <label>از (میلیون تومان)<input type="number" id="pmin" min="0" step="0.1" value="0"></label>
-      <label>تا (میلیون تومان، 0 = بدون سقف)<input type="number" id="pmax" min="0" step="0.1" value="0"></label>
+      <label>از (هزار تومان)<input type="number" id="pmin" min="0" step="100" value="0"></label>
+      <label>تا (هزار تومان، 0 = بدون سقف)<input type="number" id="pmax" min="0" step="100" value="0"></label>
     </div>
   </section>
 
@@ -159,7 +159,7 @@ document.querySelectorAll("#modes .chip").forEach(el => el.onclick = () => {
 });
 ["d","a","pmin","pmax","r","v","s","bot","bin","bout"].forEach(id => $(id).addEventListener("input", update));
 
-const units = id => Math.max(0, Math.round((parseFloat($(id).value) || 0) * 10)); // 1 unit = 100,000 Toman
+const units = id => Math.max(0, Math.round(parseFloat($(id).value) || 0)); // 1 unit = 1,000 Toman (thousand Toman)
 
 function update() {
   const d = +$("d").value; $("dv").textContent = d + "%";
@@ -182,7 +182,7 @@ function update() {
   $("go").classList.toggle("off", bad);
   $("go").href = bad ? "#" : `https://t.me/${bot}?start=${code}`;
   const cats = picked.size ? [...picked].map(i => CATS[i]).join("، ") : "همه‌ی دسته‌ها";
-  $("summary").textContent = (hi && lo > hi) ? "⚠️ «از» نباید بیشتر از «تا» باشد." : cats + (d ? ` | تخفیف ≥ ${d}%` : "") + (a ? ` | مبلغ تخفیف ≥ ${a/10} میلیون` : "") + (ship.size || flags.size || +$("s").value ? " | + شرط‌های دیگر" : "");
+  $("summary").textContent = (hi && lo > hi) ? "⚠️ «از» نباید بیشتر از «تا» باشد." : cats + (d ? ` | تخفیف ≥ ${d}%` : "") + (a ? ` | مبلغ تخفیف ≥ ${a.toLocaleString("en-US")} هزار تومان` : "") + (ship.size || flags.size || +$("s").value ? " | + شرط‌های دیگر" : "");
 }
 const list = id => ($(id).value || "").split(/[،,]/).map(x => x.trim()).filter(Boolean).slice(0, 10);
 if (inApp) {
