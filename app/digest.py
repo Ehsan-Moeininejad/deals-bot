@@ -54,28 +54,96 @@ def group(new: list[dict]) -> list[tuple[str, list[dict]]]:
     return [(n, items) for n, items, _ in groups[: S.MAX_GROUPS]]
 
 
-def _fmt_item(i: int, o: dict, now: datetime) -> str:
-    title = html.escape(o["title"][:70], quote=False)
-    url = html.escape(o["url"], quote=True)
-    parts = [f"−{o['discount']}%", f"{o['price']:,} تومان", f"⭐ {o['rating'] or 0:.1f}",
-             f"🔥 جذابیت {attractiveness(o)}%"]
-    label = SOURCE_LABELS.get(o.get("source", ""))
-    if label:
-        parts.append(html.escape(label, quote=False))
-    if o["ends_at"]:
+# ---- item formats ------------------------------------------------------------------
+# Design notes: the product name is the link (one clear tap target); the old price is
+# struck through next to the new one, so the saving is visible at a glance; the rest
+# sits on one quiet line. Rich format for the top items, one-line format for the rest
+# (inside a collapsed quote, so the post stays short but nothing is hidden).
+
+RLM = "\u200f"  # keeps lines that start with digits right-to-left
+
+
+def short_title(title: str, limit: int = S.TITLE_MAX) -> str:
+    title = " ".join((title or "").split())
+    if len(title) <= limit:
+        return title
+    cut = title[:limit].rsplit(" ", 1)[0]
+    return (cut if len(cut) > limit * 0.6 else title[:limit]).rstrip("،,-– ") + "…"
+
+
+def _link(o: dict, limit: int = S.TITLE_MAX) -> str:
+    return (f'<a href="{html.escape(o["url"], quote=True)}">'
+            f'{html.escape(short_title(o["title"], limit), quote=False)}</a>')
+
+
+def _ends(o: dict, now: datetime) -> str:
+    if o.get("ends_at"):
         left = o["ends_at"] - now.timestamp()
         if 0 < left <= S.END_SHOW_HOURS * 3600:
-            end = datetime.fromtimestamp(o["ends_at"], S.TZ)
-            parts.append(f"⏰ تا {end:%H:%M}")
-    if o.get("repriced"):
-        parts.append("📉 افت قیمت")
-    return f"{i}. <a href=\"{url}\">{title}</a>\n\u200f" + " | ".join(parts)
+            return f"⏰ تا {datetime.fromtimestamp(o['ends_at'], S.TZ):%H:%M}"
+    return ""
+
+
+def fmt_rich(i: int, o: dict, now: datetime) -> str:
+    """Two lines: rank + name, then old → new price and the key facts."""
+    facts = [f"<s>{o['rrp']:,}</s> ← <b>{o['price']:,}</b> تومان", f"🔻{o['discount']}%"]
+    if o.get("rating"):
+        facts.append(f"⭐{o['rating']:.1f}")
+    facts.append(f"🔥{attractiveness(o)}")
+    for extra in (_ends(o, now), "📉 افت قیمت" if o.get("repriced") else "",
+                  html.escape(SOURCE_LABELS.get(o.get("source", ""), ""), quote=False)):
+        if extra:
+            facts.append(extra)
+    return f"{i}. {_link(o)}\n{RLM}" + " · ".join(facts)
+
+
+def fmt_compact(o: dict) -> str:
+    """One line for the collapsed part of a category."""
+    return f"{RLM}▫️ {_link(o, S.TITLE_MAX_COMPACT)} · 🔻{o['discount']}% · <b>{o['price']:,}</b>"
+
+
+_fmt_item = fmt_rich  # older name, used by personal messages and tests
 
 
 def _block(heading: str, items: list[dict], now: datetime) -> str:
+    """Category block: the best RICH_PER_GROUP items in full, the rest collapsed."""
     lines = [heading]
-    lines += [_fmt_item(n, o, now) for n, o in enumerate(items, 1)]
+    lines += [fmt_rich(n, o, now) for n, o in enumerate(items[: S.RICH_PER_GROUP], 1)]
+    rest = items[S.RICH_PER_GROUP:]
+    if rest:
+        lines.append(f"<blockquote expandable>➕ {len(rest)} آفر دیگر در این دسته\n"
+                     + "\n".join(fmt_compact(o) for o in rest) + "</blockquote>")
     return "\n".join(lines)
+
+
+def hero(o: dict, post_time: datetime, now: datetime) -> str:
+    """Caption for the photo post of the hour's best deal (Telegram caption limit: 1024)."""
+    lines = [f"⚡️ <b>داغ‌ترین آفر ساعت {post_time:%H:%M}</b>", "",
+             f"<b>{html.escape(short_title(o['title'], 90), quote=False)}</b>",
+             f"{RLM}<s>{o['rrp']:,}</s> ← <b>{o['price']:,} تومان</b>"]
+    facts = [f"🔻 {o['discount']}% تخفیف"]
+    if o.get("saving"):
+        facts.append(f"💰 {o['saving']:,} تومان صرفه‌جویی")
+    lines.append(RLM + " · ".join(facts))
+    second = []
+    if o.get("rating"):
+        second.append(f"⭐ {o['rating']:.1f}" + (f" ({o['votes']:,} رأی)" if o.get("votes") else ""))
+    second.append(f"🔥 جذابیت {attractiveness(o)}%")
+    if _ends(o, now):
+        second.append(_ends(o, now))
+    lines.append(RLM + " · ".join(second))
+    return "\n".join(lines)
+
+
+def hero_markup(o: dict) -> dict:
+    return {"inline_keyboard": [[{"text": "🛒 مشاهده و خرید در دیجی‌کالا", "url": o["url"]}]]}
+
+
+def channel_markup(bot_name: str) -> dict | None:
+    row = [{"text": "🔥 همه‌ی شگفت‌انگیزها", "url": "https://www.digikala.com/incredible-offers/"}]
+    if bot_name:
+        row.insert(0, {"text": "🎯 آفر دلخواهم را بفرست", "url": f"https://t.me/{bot_name}?start=channel"})
+    return {"inline_keyboard": [row]}
 
 
 _TAG = re.compile(r"<[^>]+>")
@@ -101,18 +169,16 @@ def _hard_split(text: str, limit: int) -> list[str]:
 
 
 def render(groups, ongoing, post_time: datetime, now: datetime, stats: dict) -> list[str]:
-    header = f"🔥 <b>بهترین آفرهای ساعت {post_time:%H:%M}</b>"
+    header = (f"🛍 <b>شگفت‌انگیزهای تازه‌ی ساعت {post_time:%H:%M}</b>\n"
+              f"{RLM}🆕 {stats['new']} آفر تازه از {stats['checked']:,} کالای بررسی‌شده")
     blocks = []
     for name, items in groups:
         blocks.append(_block(f"{emoji_for(name)} <b>{html.escape(name, quote=False)}</b>", items, now))
     if ongoing:
-        blocks.append(_block("⏳ <b>همچنان برقرار</b>", ongoing, now))
-    footer = (
-        f"🆕 جدید این ساعت: {stats['new']}  |  بررسی‌شده: {stats['checked']:,}\n"
-        f"🔄 به‌روزرسانی {now:%H:%M} — قیمت‌ها ممکن است تغییر کنند. لینک‌ها مستقیم و بدون افیلیت است."
-        + ("\n" if stats.get("bot") else "")
-        + (f"🎯 آفرهای دلخواه خودت را از تخفیف‌یاب بگیر: @{stats['bot']}" if stats.get("bot") else "")
-    )
+        blocks.append("⏳ <b>همچنان برقرار</b>\n<blockquote expandable>"
+                      + "\n".join(fmt_compact(o) for o in ongoing) + "</blockquote>")
+    footer = (f"{RLM}🔻 تخفیف · ⭐ امتیاز کالا · 🔥 درصد جذابیت · ⏰ پایان آفر\n"
+              f"🔄 {now:%H:%M} · قیمت‌ها ممکن است تغییر کند · لینک‌ها مستقیم و بدون افیلیت")
 
     limit = S.MESSAGE_LIMIT
     pieces = []
@@ -123,7 +189,7 @@ def render(groups, ongoing, post_time: datetime, now: datetime, stats: dict) -> 
     for p in pieces:
         if vlen(cur) + vlen(p) + 2 > limit:
             messages.append(cur)
-            cur = "<b>ادامه…</b>"
+            cur = "<b>ادامه‌ی آفرها 👇</b>"
         cur += "\n\n" + p
     messages.append(cur)
     return messages

@@ -101,7 +101,9 @@ def _extras(p: dict, variant: dict) -> dict:
         stars = float(seller.get("stars")) if seller.get("stars") is not None else None
     except (TypeError, ValueError):
         stars = None
+    main_img = ((p.get("images") or {}).get("main") or {}).get("url") or []
     return {
+        "image": main_img[0] if isinstance(main_img, list) and main_img else "",
         "seller_stars": stars,                                          # out of 5
         "official": bool((seller.get("properties") or {}).get("is_official")),
         "jet": "jet" in modes,                                          # fast same-day (Tehran/Karaj)

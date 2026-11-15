@@ -36,7 +36,8 @@ def test_attractiveness_is_a_percentage_and_shown():
     e = scoring.evaluate(offer(), [], TODAY, NOW_TS)
     pct = scoring.attractiveness(e)
     assert 0 <= pct <= 100
-    assert f"جذابیت {pct}%" in digest._fmt_item(1, e, NOW)
+    assert f"🔥{pct}" in digest._fmt_item(1, e, NOW)
+    assert f"جذابیت {pct}%" in digest.hero(e, NOW, NOW)
 
 
 def test_up_to_ten_per_category():

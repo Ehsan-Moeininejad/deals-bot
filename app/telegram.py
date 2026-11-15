@@ -55,6 +55,12 @@ class Telegram:
         res = self._call("sendMessage", payload)
         return res["message_id"]
 
+    def send_photo(self, chat_id: str, photo_url: str, caption: str, markup: dict | None = None) -> int:
+        payload = {"chat_id": chat_id, "photo": photo_url, "caption": caption, "parse_mode": "HTML"}
+        if markup:
+            payload["reply_markup"] = markup
+        return self._call("sendPhoto", payload)["message_id"]
+
     def get_me(self) -> dict:
         return self._call("getMe", {})
 

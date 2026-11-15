@@ -151,8 +151,8 @@ def _toman(n: int) -> str:
     return f"{n:,}"
 
 
-def describe(rule: dict) -> str:
-    """One readable Persian line, for /rules and confirmations."""
+def describe(rule: dict, sep: str = " | ") -> str:
+    """Readable Persian summary. sep=" | " for one line, "\n" for a bullet list."""
     bits = []
     bits.append("، ".join(S.CATEGORIES[c] for c in rule["cats"]) if rule["cats"] else "همه‌ی دسته‌ها")
     if rule["dmin"]:
@@ -179,8 +179,10 @@ def describe(rule: dict) -> str:
         bits.append(" یا ".join(SHIP[c] for c in rule["ship"]))
     for c in rule.get("flags", ""):
         bits.append(FLAGS[c])
-    bits.append("ارسال روزانه" if rule["mode"] == "d" else "ارسال فوری")
-    return " | ".join(bits)
+    bits.append("ارسال روزانه (ساعت 21)" if rule["mode"] == "d" else "ارسال فوری")
+    if sep == "\n":
+        return "\n".join("▫️ " + b for b in bits)
+    return sep.join(bits)
 
 
 def matches(rule: dict, o: dict) -> bool:

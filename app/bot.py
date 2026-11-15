@@ -14,6 +14,7 @@ import json
 import logging
 import time
 
+from . import digest
 from . import rules as R
 from . import settings as S
 from . import state
@@ -22,21 +23,32 @@ from .telegram import Telegram, TelegramError
 log = logging.getLogger("bot")
 
 PRESETS = [
-    ("📱 کالای دیجیتال، تخفیف ۳۰٪+", "c0_d30_r40_v20_mi"),
-    ("🏠 لوازم خانگی برقی، تخفیف ۲۵٪+", "ca_d25_r40_v20_mi"),
-    ("💄 آرایشی و بهداشتی، تخفیف ۴۰٪+", "c1_d40_r40_v20_mi"),
-    ("🔥 همه‌ی دسته‌ها، تخفیف ۵۰٪+", "d50_r40_v50_mi"),
+    ("📱 دیجیتال · 30%+", "c0_d30_r40_v20_mi"),
+    ("🏠 لوازم خانگی · 25%+", "ca_d25_r40_v20_mi"),
+    ("💄 آرایشی · 40%+", "c1_d40_r40_v20_mi"),
+    ("🔥 هر چیزی · 50%+", "d50_r40_v50_mi"),
 ]
 
+WAIT_NOTE = "⏳ تخفیف‌یاب هر چند دقیقه یک بار پیام‌ها را می‌خواند؛ جواب ممکن است کمی طول بکشد."
+
+WELCOME = (
+    "سلام 👋 من <b>تخفیف‌یاب</b> هستم.\n"
+    "بگو دنبال چه هستی؛ هر وقت آفرش در دیجی‌کالا آمد، خبرت می‌کنم.\n\n"
+    "<b>1.</b> یک قانون آماده بزن 👇\n"
+    "<b>2.</b> یا با «🛠 ساخت قانون» شرط‌های خودت را بچین: دسته، قیمت، درصد یا مبلغ تخفیف، "
+    "برند، امتیاز کالا و فروشنده، ارسال سریع یا 3 ساعته.\n\n"
+    + WAIT_NOTE
+)
+
 HELP = (
-    "<b>راهنما</b>\n"
-    "/rules قانون‌های من و حذف آن‌ها\n"
-    "/add کد — افزودن قانون با کد صفحه‌ی ساخت قانون\n"
-    "/brand شماره سامسونگ -متفرقه — برند شامل یا مستثنا برای یک قانون\n"
-    "/pause و /resume — توقف و ادامه‌ی ارسال\n"
-    "/export — دیدن همه‌ی داده‌ی من\n"
-    "/delete_me — پاک‌کردن کامل داده‌ی من\n\n"
-    "⏳ بات همیشه روشن نیست؛ جواب‌ها ممکن است چند دقیقه طول بکشد."
+    "📖 <b>راهنمای تخفیف‌یاب</b>\n\n"
+    "🛠 <b>ساخت قانون</b> — دکمه‌ی منو یا پایین صفحه\n"
+    "📋 /rules — قانون‌های من و حذف آن‌ها\n"
+    "🏷 /brand — برند شامل یا مستثنا، مثال: <code>/brand 1 سامسونگ -متفرقه</code>\n"
+    "⏸ /pause · ▶️ /resume — توقف و ادامه‌ی ارسال\n"
+    "🗂 /export — همه‌ی داده‌ی ذخیره‌شده‌ی من\n"
+    "🗑 /delete_me — پاک‌کردن کامل داده‌ی من\n\n"
+    + WAIT_NOTE
 )
 
 
@@ -75,12 +87,14 @@ def setup_profile(tg: Telegram, username: str) -> None:
 
 def intro_text(username: str) -> str:
     return (
-        "🛍 <b>تخفیف‌یاب — دستیار خرید از دیجی‌کالا</b>\n\n"
-        "هر ساعت بهترین آفرهای شگفت‌انگیز دیجی‌کالا همین‌جا، دسته‌بندی‌شده و با درصد جذابیت.\n\n"
-        f"🎯 <b>آفرهای مخصوص خودت را بگیر:</b> در @{username} بگو دنبال چه هستی — دسته، درصد یا مبلغ تخفیف، "
-        "بازه‌ی قیمت، برند، امتیاز کالا و فروشنده، ارسال سریع یا ۳ ساعته — "
-        "و هر وقت پیدا شد مستقیم برایت می‌فرستد.\n\n"
-        "رایگان و متن‌باز · لینک‌ها مستقیم و بدون افیلیت · مستقل از دیجی‌کالا"
+        "🛍 <b>تخفیف‌یاب | دستیار خرید از دیجی‌کالا</b>\n\n"
+        "⚡️ <b>هر ساعت</b>: داغ‌ترین شگفت‌انگیزهای دیجی‌کالا، دسته‌بندی‌شده با قیمت قبل و بعد\n"
+        "🎯 <b>فقط برای تو</b>: بگو دنبال چه هستی، هر وقت آمد خبرت می‌کنیم\n"
+        "↳ دسته · قیمت · درصد یا مبلغ تخفیف · برند · امتیاز · ارسال سریع یا 3 ساعته\n\n"
+        "<b>راهنمای علامت‌ها</b>\n"
+        "🔻 درصد تخفیف · ⭐ امتیاز کالا · 🔥 درصد جذابیت · ⏰ زمان پایان آفر\n\n"
+        f"👇 دستیار شخصی‌ات را روشن کن: @{username}\n"
+        "<i>رایگان و متن‌باز · لینک‌ها مستقیم و بدون افیلیت · مستقل از دیجی‌کالا</i>"
     )
 
 
@@ -91,16 +105,22 @@ def pin_intro(tg: Telegram, username: str) -> None:
         return
     rec = state.read("channel_pin.json", {})
     if rec.get("v") != S.CHANNEL_PIN_VERSION:
-        markup = {"inline_keyboard": [[{"text": "🎯 شروع دستیار خرید",
+        old_id = rec.get("id")
+        markup = {"inline_keyboard": [[{"text": "🎯 روشن‌کردن دستیار خرید",
                                         "url": f"https://t.me/{username}?start=channel"}]]}
         rec = {"v": S.CHANNEL_PIN_VERSION, "id": tg.send(S.CHANNEL_ID, intro_text(username), markup),
-               "pinned": False}
+               "pinned": False, "old": old_id}
         state.write("channel_pin.json", rec)
     if not rec.get("pinned"):
         try:
             tg.call("pinChatMessage", {"chat_id": S.CHANNEL_ID, "message_id": rec["id"],
                                        "disable_notification": True})
             rec["pinned"] = True
+            if rec.get("old"):  # replace the previous intro instead of stacking pins
+                try:
+                    tg.call("deleteMessage", {"chat_id": S.CHANNEL_ID, "message_id": rec.pop("old")})
+                except TelegramError:
+                    pass
             state.write("channel_pin.json", rec)
             log.info("channel intro pinned")
         except TelegramError as exc:
@@ -119,9 +139,15 @@ def app_keyboard(bot_username: str) -> dict:
 
 
 def welcome_markup(bot_username: str) -> dict:
-    rows = [[{"text": "🛠 ساخت قانون دلخواه", "url": builder_url(bot_username)}]]
-    rows += [[{"text": t, "callback_data": f"p:{c}"}] for t, c in PRESETS]
+    presets = [{"text": t, "callback_data": f"p:{c}"} for t, c in PRESETS]
+    rows = [presets[i:i + 2] for i in range(0, len(presets), 2)]
+    rows.append([{"text": "🛠 ساخت قانون دلخواه", "url": builder_url(bot_username)}])
     return {"inline_keyboard": rows}
+
+
+def after_save_markup(bot_username: str) -> dict:
+    return {"inline_keyboard": [[{"text": "📋 قانون‌های من", "callback_data": "l:"},
+                                 {"text": "➕ قانون دیگر", "url": builder_url(bot_username)}]]}
 
 
 def latest_offers() -> list[dict]:
@@ -131,12 +157,9 @@ def latest_offers() -> list[dict]:
 def preview(rule: dict) -> str:
     found = [o for o in latest_offers() if R.matches(rule, o)]
     if not found:
-        return "فعلاً آفری با این شرایط نیست؛ به محض پیدا شدن برایت می‌فرستم."
-    lines = [f"الان {len(found)} آفر با این شرایط هست. نمونه:"]
-    for o in found[:3]:
-        title = html.escape(o["title"][:60], quote=False)
-        lines.append(f"• <a href=\"{html.escape(o['url'], quote=True)}\">{title}</a> — "
-                     f"−{o['discount']}% | {o['price']:,} تومان")
+        return "🔎 فعلاً آفری با این شرط‌ها نیست؛ به محض پیدا شدن برایت می‌فرستم."
+    lines = [f"🔎 <b>همین الان {len(found)} آفر با این شرط‌ها هست</b>؛ بهترین‌ها:"]
+    lines += [digest.fmt_compact(o) for o in found[:3]]
     return "\n".join(lines)
 
 
@@ -185,18 +208,20 @@ class Bot:
         u["rules"].append(rule)
         u["paused"] = False
         self.touch(u)
-        self.reply(cid, f"✅ قانون {len(u['rules'])} ذخیره شد:\n{html.escape(R.describe(rule))}\n\n{preview(rule)}")
+        self.reply(cid, f"✅ <b>قانون {len(u['rules'])} ذخیره شد</b>\n{html.escape(R.describe(rule, chr(10)))}\n\n"
+                        f"{preview(rule)}", after_save_markup(self.username))
 
     def list_rules(self, cid: str) -> None:
         u = self.user(cid, create=False)
         if not u or not u["rules"]:
             self.reply(cid, "هنوز قانونی نساخته‌ای.", welcome_markup(self.username))
             return
-        lines = ["<b>قانون‌های تو</b>" + (" (⏸ متوقف)" if u["paused"] else "")]
+        lines = ["📋 <b>قانون‌های تو</b>" + (" · ⏸ ارسال متوقف است (/resume)" if u["paused"] else "") + "\n"]
         buttons = []
         for i, r in enumerate(u["rules"], 1):
-            lines.append(f"{i}. {html.escape(R.describe(r))}")
-            buttons.append([{"text": f"🗑 حذف قانون {i}", "callback_data": f"x:{r['id']}"}])
+            lines.append(f"<b>قانون {i}</b>\n{html.escape(R.describe(r, chr(10)))}")
+            buttons.append({"text": f"🗑 حذف {i}", "callback_data": f"x:{r['id']}"})
+        buttons = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
         buttons.append([{"text": "➕ قانون جدید", "url": builder_url(self.username)}])
         self.reply(cid, "\n".join(lines), {"inline_keyboard": buttons})
 
@@ -224,7 +249,8 @@ class Bot:
         rule["bin"] = [a for a in args[1:] if not a.startswith("-")][:10]
         rule["bout"] = [a[1:] for a in args[1:] if a.startswith("-") and len(a) > 1][:10]
         self.touch(u)
-        self.reply(cid, f"✅ به‌روز شد:\n{html.escape(R.describe(rule))}\n\n{preview(rule)}")
+        self.reply(cid, f"✅ <b>برند به‌روز شد</b>\n{html.escape(R.describe(rule, chr(10)))}\n\n{preview(rule)}",
+                   after_save_markup(self.username))
 
     def export(self, cid: str) -> None:
         u = self.user(cid, create=False)
@@ -260,11 +286,9 @@ class Bot:
             if args and args[0] != "channel":  # "channel" = came from the channel button
                 self.add_rule(cid, args[0])
             else:
-                self.reply(cid, "دکمه‌ی «🛠 ساخت قانون» پایین صفحه، صفحه‌ی ساخت قانون را داخل تلگرام باز می‌کند.",
+                self.reply(cid, "👇 دکمه‌ی «🛠 ساخت قانون» همیشه پایین صفحه است.",
                            app_keyboard(self.username))
-                self.reply(cid, "سلام 👋 من تخفیف‌یاب هستم.\nبهترین آفرهای دیجی‌کالا را طبق شرایط خودت برایت می‌فرستم.\n"
-                                "یک قانون آماده انتخاب کن یا قانون دلخواهت را بساز.\n\n" + HELP,
-                           welcome_markup(self.username))
+                self.reply(cid, WELCOME, welcome_markup(self.username))
         elif cmd == "/add" and args:
             self.add_rule(cid, args[0])
         elif cmd == "/rules":
@@ -299,6 +323,13 @@ class Bot:
             self.add_rule(cid, data[2:])
         elif data.startswith("x:") and data[2:].isdigit():
             self.delete_rule(cid, rule_id=int(data[2:]))
+        elif data == "l:":
+            self.list_rules(cid)
+        elif data == "z:":
+            u = self.user(cid)
+            u["paused"] = True
+            self.touch(u)
+            self.reply(cid, "⏸ ارسال متوقف شد. هر وقت خواستی /resume را بفرست.")
 
     def handle(self, update: dict) -> None:
         try:

@@ -110,10 +110,19 @@ def run_digest(force: bool = False) -> int:
             time.sleep(wait)
 
         try:
-            markup = ({"inline_keyboard": [[{"text": "🎯 آفرهای دلخواه خودم را بفرست",
-                                              "url": f"https://t.me/{bot_name}?start=channel"}]]}
-                      if bot_name else None)
-            tg.send_all(destination, messages, markup)
+            if S.HERO_PHOTO and shown:
+                top = max(shown, key=lambda o: o["score"])
+                caption = digest.hero(top, post_time, now)
+                if not S.LIVE:
+                    caption = "🧪 <b>پیش‌نمایش</b>\n\n" + caption
+                try:
+                    if not top.get("image"):
+                        raise TelegramError("no image")
+                    tg.send_photo(destination, top["image"], caption, digest.hero_markup(top))
+                except TelegramError:
+                    tg.send(destination, caption, digest.hero_markup(top))  # same card, without the photo
+                time.sleep(S.SEND_DELAY)
+            tg.send_all(destination, messages, digest.channel_markup(bot_name))
             posted = True
             if S.LIVE:
                 ts = time.time()

@@ -52,6 +52,10 @@ HISTORY_KEEP_DAYS = 90
 # ---- digest shape ------------------------------------------------------------
 MAX_GROUPS = 8
 ITEMS_PER_GROUP = 10        # top offers per category in the channel post
+RICH_PER_GROUP = 3          # shown in full; the rest of the category sits in a collapsed quote
+TITLE_MAX = 48              # product name length in the full format
+TITLE_MAX_COMPACT = 38      # product name length in the one-line format
+HERO_PHOTO = True           # post the hour's best deal as a photo before the list
 MAX_ONGOING = 5
 MIN_NEW_TO_POST = 3         # fewer new offers than this = skip this hour
 RESEND_HOURS = 24           # an offer is not re-posted within this window...
@@ -66,7 +70,7 @@ END_SHOW_HOURS = 6          # show the deal end time only when it ends within th
 PAGES_URL = "https://ehsan-moeininejad.github.io/deals-bot/"  # rule builder page (GitHub Pages)
 BOT_LISTEN_SECONDS = 60     # each bot run listens this long for new messages
 BOT_PROFILE_VERSION = 1     # bump to re-send the bot's menu, commands and description
-CHANNEL_PIN_VERSION = 1     # bump to post and pin a new intro message in the channel
+CHANNEL_PIN_VERSION = 2     # bump to post and pin a new intro message in the channel
 MAX_RULES_PER_USER = 5
 USER_MAX_ITEMS = 10         # offers per personal message
 USER_DAILY_MESSAGES = 20    # hard cap of personal messages per user per day

@@ -101,7 +101,8 @@ def test_render_escapes_html_and_respects_limit():
     assert all(digest.vlen(m) <= S.MESSAGE_LIMIT + 200 for m in msgs)
     joined = "\n".join(msgs)
     assert "&lt;b&gt;" in joined and "<b>تست</b>" not in joined
-    assert "بهترین آفرهای ساعت 13:00" in msgs[0]
+    assert "شگفت‌انگیزهای تازه‌ی ساعت 13:00" in msgs[0]
+    assert "<blockquote expandable>" in joined  # the rest of each category is collapsed
 
 
 def test_target_post_time():

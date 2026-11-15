@@ -37,10 +37,15 @@ def pick(user: dict, offers: list[dict], sent: dict, post_time: datetime, now_ts
 
 
 def render(items: list[dict], now: datetime) -> str:
-    lines = ["🎯 <b>آفرهای مطابق قانون‌های تو</b>"]
-    lines += [digest._fmt_item(i, o, now) for i, o in enumerate(items, 1)]
-    lines.append("\n⚙️ مدیریت قانون‌ها: /rules")
+    head = "آفر تازه" if len(items) == 1 else f"{len(items)} آفر تازه"
+    lines = [f"🎯 <b>{head} مطابق شرط‌های تو</b>", ""]
+    lines += [digest.fmt_rich(i, o, now) for i, o in enumerate(items, 1)]
+    lines.append(f"\n{digest.RLM}🔻 تخفیف · ⭐ امتیاز · 🔥 جذابیت")
     return "\n".join(lines)
+
+
+PERSONAL_MARKUP = {"inline_keyboard": [[{"text": "📋 قانون‌های من", "callback_data": "l:"},
+                                        {"text": "⏸ توقف ارسال", "callback_data": "z:"}]]}
 
 
 def compact_offers(scored: list[dict]) -> list[dict]:
@@ -73,7 +78,7 @@ def deliver(tg: Telegram, offers: list[dict], now: datetime, post_time: datetime
         if not items:
             continue
         try:
-            tg.send(cid, render(items, now))
+            tg.send(cid, render(items, now), PERSONAL_MARKUP)
         except TelegramError as exc:
             if exc.code == 403:
                 blocked[cid] = int(now_ts)
