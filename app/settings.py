@@ -95,19 +95,32 @@ LOW_STOCK = 5               # "only N left" when the offer has this many units o
 ENDING_SOON_HOURS = 2       # "ends at HH:MM" when the offer ends within this many hours
 MOSTLY_SOLD = 70            # "N% sold" from this share on
 LAST_CHANCE_MAX = 3         # items in the «رو به اتمام» strip at the top of the list
-LLM_TIMEOUT = 8             # seconds per provider before switching to the next one
+LLM_TIMEOUT = 8             # seconds per request before switching to the next model
+LLM_BUDGET = 20             # seconds per line in total; then the rule-based line is used
 LLM_MAX_CHARS = 110
-# Free tiers only. Tried top to bottom; a provider is used only if its key secret is set.
+LLM_MODELS_PER_PROVIDER = 2  # how many models of one provider to try before moving on
+# FREE ONLY. Model names change often, so they are not hardcoded: each run reads the
+# provider's live model list and keeps only free text models (see app/nudge.py).
+#   gemini     - free tier of Google AI Studio (flash / flash-lite text models only)
+#   groq       - free plan (no card on the account = nothing can be charged)
+#   openrouter - only models whose id ends in ":free" AND whose listed price is 0
+# Tried top to bottom; a provider is used only if its key secret is set.
 LLM_PROVIDERS = [
-    {"name": "gemini-flash", "kind": "gemini", "model": "gemini-2.0-flash", "key_env": "GEMINI_API_KEY"},
-    {"name": "gemini-flash-lite", "kind": "gemini", "model": "gemini-2.0-flash-lite", "key_env": "GEMINI_API_KEY"},
-    {"name": "openrouter-free", "kind": "openai", "url": "https://openrouter.ai/api/v1/chat/completions",
-     "model": "meta-llama/llama-3.3-70b-instruct:free", "key_env": "OPENROUTER_API_KEY"},
-    {"name": "groq", "kind": "openai", "url": "https://api.groq.com/openai/v1/chat/completions",
-     "model": "llama-3.3-70b-versatile", "key_env": "GROQ_API_KEY"},
+    {"name": "gemini", "kind": "gemini", "key_env": "GEMINI_API_KEY"},
+    {"name": "groq", "kind": "openai", "key_env": "GROQ_API_KEY",
+     "url": "https://api.groq.com/openai/v1/chat/completions",
+     "models_url": "https://api.groq.com/openai/v1/models",
+     "prefer": ["gpt-oss-120b", "qwen", "gpt-oss-20b", "llama", "kimi"]},
+    {"name": "openrouter", "kind": "openai", "key_env": "OPENROUTER_API_KEY", "free_only": True,
+     "url": "https://openrouter.ai/api/v1/chat/completions",
+     "models_url": "https://openrouter.ai/api/v1/models",
+     "prefer": ["llama", "gemma", "qwen", "mistral", "deepseek", "gpt-oss"]},
     {"name": "cloudflare", "kind": "cloudflare", "model": "@cf/meta/llama-3.1-8b-instruct",
      "key_env": "CF_API_TOKEN", "account_env": "CF_ACCOUNT_ID"},
 ]
+# words that mark a model as not a plain chat/text model (skipped)
+LLM_SKIP_WORDS = ["image", "vision", "tts", "audio", "live", "embed", "whisper", "guard",
+                  "orpheus", "playai", "transcribe", "compound", "search", "robotics", "omni"]
 
 # ---- sharing (kept light: the bot is for finding offers, not for promoting itself) ------
 SHARE_HOURS = [21]          # the channel list carries a «send to friends» button only at these hours

@@ -4,9 +4,11 @@ Every line is built ONLY from facts in the data (units left, share sold, end tim
 lowest price of the month, saving). Nothing is invented: an LLM line that mentions a
 number not present in the facts is thrown away and the rule-based line is used.
 
-LLMs: free tiers only, tried in order; on a timeout, rate limit or server error the
-next provider is tried at once, and a failed provider is skipped for the rest of the
-run. No key at all = rule-based lines only (the bot works the same).
+LLMs: FREE ONLY. Model names are read from each provider's live model list on every run
+and filtered to free text models (Gemini flash family, Groq free plan, OpenRouter ids
+ending in ":free" with a listed price of 0). On a timeout, rate limit or server error
+the next model is tried at once, and a failed model is skipped for the rest of the run.
+No key at all = rule-based lines only (the bot works the same).
 """
 from __future__ import annotations
 
@@ -21,7 +23,8 @@ from . import settings as S
 
 log = logging.getLogger("nudge")
 
-_down: dict[str, float] = {}  # provider -> time it failed (skipped for the rest of the run)
+_down: dict[str, float] = {}         # "provider:model" -> time it failed (skipped this run)
+_models_cache: dict[str, list[str]] = {}  # provider -> free models found this run
 
 PERSIAN = re.compile(r"[؀-ۿ]")
 DIGITS = re.compile(r"\d[\d,.]*")
@@ -120,28 +123,105 @@ def _keys() -> list[tuple[str, dict]]:
     return out
 
 
-def _call(p: dict, key: str, prompt: str) -> str:
+def _version(model_id: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", model_id)[:3])
+
+
+def _textual(model_id: str) -> bool:
+    low = model_id.lower()
+    return not any(w in low for w in S.LLM_SKIP_WORDS)
+
+
+def _rank(ids: list[str], prefer: list[str]) -> list[str]:
+    def score(m):
+        low = m.lower()
+        pos = next((i for i, w in enumerate(prefer) if w in low), len(prefer))
+        return (pos, "preview" in low, tuple(-n for n in _version(m)))
+    return sorted(ids, key=score)
+
+
+def pick_gemini(models: list[dict]) -> list[str]:
+    """Flash / flash-lite text models: these are the ones on the free tier."""
+    ids = []
+    for m in models:
+        mid = m.get("name", "").split("/")[-1]
+        if ("generateContent" in m.get("supportedGenerationMethods", [])
+                and "flash" in mid and _textual(mid)
+                and not re.search(r"exp|thinking|\d{3,}", mid.replace("flash", ""))):
+            ids.append(mid)
+    # newest first; stable models before previews; flash before flash-lite
+    return sorted(ids, key=lambda m: ("preview" in m, "lite" in m, tuple(-n for n in _version(m))))
+
+
+def pick_openrouter(models: list[dict], prefer: list[str]) -> list[str]:
+    """Only ids ending in ':free' whose listed prompt AND completion price is exactly 0."""
+    ids = []
+    for m in models:
+        mid, price = m.get("id", ""), m.get("pricing") or {}
+        try:
+            free = float(price.get("prompt", 1)) == 0 and float(price.get("completion", 1)) == 0
+        except (TypeError, ValueError):
+            free = False
+        if mid.endswith(":free") and free and _textual(mid):
+            ids.append(mid)
+    return _rank(ids, prefer)
+
+
+def pick_groq(models: list[dict], prefer: list[str]) -> list[str]:
+    ids = [m.get("id", "") for m in models if m.get("active", True) and _textual(m.get("id", ""))]
+    return _rank([i for i in ids if i], prefer)
+
+
+def _models(p: dict, key: str) -> list[str]:
+    name = p["name"]
+    if name in _models_cache:
+        return _models_cache[name]
+    found: list[str] = []
+    try:
+        if p["kind"] == "gemini":
+            r = requests.get("https://generativelanguage.googleapis.com/v1beta/models",
+                             params={"key": key, "pageSize": 1000}, timeout=S.LLM_TIMEOUT)
+            r.raise_for_status()
+            found = pick_gemini(r.json().get("models", []))
+        elif p["kind"] == "cloudflare":
+            found = [p["model"]]
+        else:
+            r = requests.get(p["models_url"], headers={"Authorization": f"Bearer {key}"},
+                             timeout=S.LLM_TIMEOUT)
+            r.raise_for_status()
+            data = r.json().get("data", [])
+            found = (pick_openrouter(data, p.get("prefer", [])) if p.get("free_only")
+                     else pick_groq(data, p.get("prefer", [])))
+    except Exception as exc:  # noqa: BLE001
+        log.info("copy: %s model list unavailable (%s)", name, type(exc).__name__)
+    _models_cache[name] = found[:S.LLM_MODELS_PER_PROVIDER]
+    log.info("copy: %s free models: %s", name, ", ".join(_models_cache[name]) or "none")
+    return _models_cache[name]
+
+
+def _call(p: dict, key: str, model: str, prompt: str) -> str:
     kind = p["kind"]
     if kind == "gemini":
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{p['model']}:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         r = requests.post(url, params={"key": key}, timeout=S.LLM_TIMEOUT, json={
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 80, "temperature": 0.9}})
+            "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.9}})
         r.raise_for_status()
-        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        parts = r.json()["candidates"][0]["content"]["parts"]
+        return " ".join(x.get("text", "") for x in parts if not x.get("thought"))
     if kind == "cloudflare":
         acc = os.environ[p["account_env"]]
-        url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{p['model']}"
+        url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}"
         r = requests.post(url, headers={"Authorization": f"Bearer {key}"}, timeout=S.LLM_TIMEOUT,
                           json={"messages": [{"role": "user", "content": prompt}], "max_tokens": 80})
         r.raise_for_status()
         return r.json()["result"]["response"]
-    # OpenAI-compatible (OpenRouter, Groq)
+    # OpenAI-compatible (Groq, OpenRouter); room for models that reason before answering
     r = requests.post(p["url"], headers={"Authorization": f"Bearer {key}"}, timeout=S.LLM_TIMEOUT, json={
-        "model": p["model"], "max_tokens": 80, "temperature": 0.9,
+        "model": model, "max_tokens": 600, "temperature": 0.9,
         "messages": [{"role": "user", "content": prompt}]})
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    return r.json()["choices"][0]["message"].get("content") or ""
 
 
 def clean(text: str, allowed: str) -> str | None:
@@ -161,23 +241,27 @@ def clean(text: str, allowed: str) -> str | None:
 
 
 def llm_line(context: dict) -> str | None:
-    """One line from the first free provider that answers well, or None."""
+    """One line from the first free model that answers well, or None."""
     allowed = " ".join(str(v) for v in context.values())
     prompt = PROMPT + str(context)
+    start = time.time()
     for key, p in _keys():
-        name = p["name"]
-        if name in _down:
-            continue
-        t0 = time.time()
-        try:
-            line = clean(_call(p, key, prompt), allowed)
-        except Exception as exc:  # noqa: BLE001  timeout, 429, 5xx, bad JSON: switch at once
-            _down[name] = time.time()
-            log.info("copy: %s unavailable (%s), switching", name, type(exc).__name__)
-            continue
-        if line:
-            log.info("copy: line from %s in %.1fs", name, time.time() - t0)
-            return line
+        for model in _models(p, key):
+            tag = f"{p['name']}:{model}"
+            if tag in _down:
+                continue
+            if time.time() - start > S.LLM_BUDGET:
+                return None
+            t0 = time.time()
+            try:
+                line = clean(_call(p, key, model, prompt), allowed)
+            except Exception as exc:  # noqa: BLE001  timeout, 429, 5xx, bad JSON: switch at once
+                _down[tag] = time.time()
+                log.info("copy: %s unavailable (%s), switching", tag, type(exc).__name__)
+                continue
+            if line:
+                log.info("copy: line from %s in %.1fs", tag, time.time() - t0)
+                return line
     return None
 
 

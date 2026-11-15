@@ -31,20 +31,37 @@ def test_router_switches_instantly_and_falls_back(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setenv("GROQ_API_KEY", "k")
     nudge._down.clear()
+    nudge._models_cache.clear()
+    monkeypatch.setattr(nudge, "_models", lambda p, key: {"gemini": ["g-a", "g-b"], "groq": ["q-a"]}.get(p["name"], []))
     tried = []
 
-    def fake(p, key, prompt):
-        tried.append(p["name"])
+    def fake(p, key, model, prompt):
+        tried.append(model)
         if p["kind"] == "gemini":
             raise TimeoutError
         return "این یکی را از دست نده."
 
     monkeypatch.setattr(nudge, "_call", fake)
     assert nudge.llm_line({"discount": 33}) == "این یکی را از دست نده."
-    assert tried[:2] == ["gemini-flash", "gemini-flash-lite"] and "groq" in tried
+    assert tried == ["g-a", "g-b", "q-a"]
     monkeypatch.setattr(nudge, "_call", lambda *a: (_ for _ in ()).throw(RuntimeError()))
     nudge._down.clear()
     assert nudge.offer_line(_o(stock=2), NOW_TS)  # all down -> rule line, never empty
+
+
+def test_only_free_models_are_picked():
+    gem = [{"name": f"models/{n}", "supportedGenerationMethods": ["generateContent"]} for n in
+           ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-4-carbon", "gemini-3.8-flash-image",
+            "gemini-3-flash-preview", "gemini-3.6-flash-tts"]]
+    assert nudge.pick_gemini(gem) == ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]
+    orr = [{"id": "meta-llama/llama-4-scout:free", "pricing": {"prompt": "0", "completion": "0"}},
+           {"id": "openai/gpt-5", "pricing": {"prompt": "0.000001", "completion": "0.00001"}},
+           {"id": "sneaky/model:free", "pricing": {"prompt": "0.0001", "completion": "0"}},
+           {"id": "google/gemma-4:free", "pricing": {"prompt": "0", "completion": "0"}}]
+    assert nudge.pick_openrouter(orr, ["llama", "gemma"]) == ["meta-llama/llama-4-scout:free", "google/gemma-4:free"]
+    grq = [{"id": "whisper-large-v3"}, {"id": "openai/gpt-oss-20b"}, {"id": "openai/gpt-oss-120b"},
+           {"id": "old-model", "active": False}, {"id": "meta-llama/llama-guard-4-12b"}]
+    assert nudge.pick_groq(grq, ["gpt-oss-120b", "gpt-oss-20b"]) == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 
 
 def test_last_chance_strip_and_share_button(monkeypatch):
