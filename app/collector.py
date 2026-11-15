@@ -91,6 +91,13 @@ def _ends_at(price: dict, now_ts: float | None = None) -> float | None:
     return _epoch(price.get("time"))
 
 
+def _int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _extras(p: dict, variant: dict) -> dict:
     """Seller and delivery facts used by personal rules (all verified on the live API)."""
     seller = variant.get("seller") or {}
@@ -110,6 +117,8 @@ def _extras(p: dict, variant: dict) -> dict:
         "nearby": bool(vprops.get("nearby_seller_shipment")),           # 3-hour nearby delivery
         "dk_stock": bool(vprops.get("in_digikala_warehouse")),
         "lowest_30d": bool(variant.get("has_best_price_in_last_month")),
+        "sold_pct": _int((variant.get("price") or {}).get("sold_percentage")),   # share of the offer stock sold
+        "stock": _int((variant.get("price") or {}).get("marketable_stock")),     # units left (only when low)
     }
 
 

@@ -68,9 +68,9 @@ COMMANDS = [
 DESCRIPTION = (
     "تخفیف‌یاب بهترین آفرهای دیجی‌کالا را طبق شرایط خودت می‌فرستد: دسته، درصد و مبلغ تخفیف، "
     "بازه‌ی قیمت، برند، امتیاز کالا و فروشنده، ارسال سریع یا ۳ ساعته.\n"
-    "رایگان و متن‌باز، لینک‌ها مستقیم و بدون افیلیت. Start را بزن."
+    "رایگان و متن‌باز. Start را بزن."
 )
-SHORT_DESCRIPTION = "تخفیف‌یاب: آفرهای دیجی‌کالا طبق شرایط خودت — رایگان و بدون افیلیت"
+SHORT_DESCRIPTION = "تخفیف‌یاب: آفرها و کدهای تخفیف دیجی‌کالا طبق شرایط خودت — رایگان"
 BOT_NAME = "تخفیف‌یاب"
 
 
@@ -97,7 +97,7 @@ def intro_text(username: str) -> str:
         "<b>راهنمای علامت‌ها</b>\n"
         "🔻 درصد تخفیف · ⭐ امتیاز کالا · 🔥 درصد جذابیت · ⏰ زمان پایان آفر\n\n"
         f"👇 دستیار شخصی‌ات را روشن کن: @{username}\n"
-        "<i>رایگان و متن‌باز · لینک‌ها مستقیم و بدون افیلیت · مستقل از دیجی‌کالا</i>"
+        "<i>رایگان و متن‌باز · مستقل از دیجی‌کالا</i>"
     )
 
 
@@ -149,9 +149,15 @@ def welcome_markup(bot_username: str) -> dict:
     return {"inline_keyboard": rows}
 
 
+def share_button(bot_username: str) -> dict:
+    return {"text": "📤 معرفی به دوستان", "url": digest.share_url(
+        f"https://t.me/{bot_username}", "این بات آفرهای دیجی‌کالا را طبق شرط‌های خودت پیدا می‌کند 👇")}
+
+
 def after_save_markup(bot_username: str) -> dict:
     return {"inline_keyboard": [[{"text": "📋 قانون‌های من", "callback_data": "l:"},
-                                 {"text": "➕ قانون دیگر", "url": builder_url(bot_username)}]]}
+                                 {"text": "➕ قانون دیگر", "url": builder_url(bot_username)}],
+                                [share_button(bot_username)]]}
 
 
 def latest_offers() -> list[dict]:
@@ -266,7 +272,12 @@ class Bot:
         if not items:
             self.reply(cid, "🎟 فهرست کدها هنوز آماده نیست؛ کمی بعد دوباره /codes را بفرست.", markup)
             return
-        msgs = V.render(items, f"🎟 <b>کدهای تخفیف فعال دیجی‌کالا</b> ({len(items)} کد)")
+        day = time.time() - 24 * 3600
+        items = sorted(items, key=lambda v: -(v.get("since") or 0))
+        fresh = sum(1 for v in items if (v.get("since") or 0) > day)
+        head = (f"🎟 <b>کدهای تخفیف فعال دیجی‌کالا</b>\n{V.RLM}✅ {len(items)} کد فعال"
+                + (f" · 🆕 {fresh} کد در 24 ساعت اخیر" if fresh else ""))
+        msgs = V.render(items, head)
         for i, m in enumerate(msgs):
             self.reply(cid, m, markup if i == len(msgs) - 1 else None)
 
@@ -308,7 +319,9 @@ class Bot:
         if cmd == "/start":
             u = self.user(cid)
             self.touch(u)  # also clears an earlier "blocked" mark
-            if args and args[0] != "channel":  # "channel" = came from the channel button
+            if args and args[0] == "codes":  # came from the codes post
+                self.codes(cid)
+            elif args and args[0] != "channel":  # "channel" = came from the channel button
                 self.add_rule(cid, args[0])
             else:
                 self.reply(cid, "👇 دکمه‌ی «🛠 ساخت قانون» همیشه پایین صفحه است.",
@@ -334,7 +347,9 @@ class Bot:
         elif cmd == "/delete_me":
             self.delete_me(cid)
         elif cmd == "/help":
-            self.reply(cid, HELP, welcome_markup(self.username))
+            markup = welcome_markup(self.username)
+            markup["inline_keyboard"].append([share_button(self.username)])
+            self.reply(cid, HELP, markup)
         else:
             self.reply(cid, HELP, welcome_markup(self.username))
 
@@ -398,7 +413,7 @@ def run(tg: Telegram) -> int:
         if time.time() >= deadline:
             break
     try:
-        V.run(tg, bot.users)
+        V.run(tg, bot.users, bot_name=bot.username)
     except Exception:  # noqa: BLE001  vouchers must never break the bot
         log.exception("voucher check failed")
     log.info("bot: %s update(s), %s repl(ies), %s user(s)", handled, bot.sent, len(bot.users))

@@ -62,6 +62,12 @@ jobs:
           LIVE: ${{ vars.LIVE }}
           PAUSED: ${{ vars.PAUSED }}
           STATE_DIR: state
+          # free AI providers for the one-line nudges; any missing key is simply skipped
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           # scheduled runs have no inputs: fall back to digest / false
           JOB: ${{ inputs.job || 'digest' }}
           FORCE: ${{ inputs.force || 'false' }}

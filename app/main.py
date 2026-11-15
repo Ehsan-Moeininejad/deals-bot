@@ -6,7 +6,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-from . import bot, collector, delivery, digest, scoring, state
+from . import bot, collector, delivery, digest, nudge, scoring, state
 from . import settings as S
 from .telegram import Telegram, TelegramError
 
@@ -98,8 +98,12 @@ def run_digest(force: bool = False) -> int:
             bot_name = ""
         groups = digest.group(new)
         shown = [o for _, items in groups for o in items]
+        urgent = digest.last_chance(new + ongoing, now)
+        salt = post_time.hour
+        line = nudge.header_line(len(new), new[0], now.timestamp(), salt) if new else ""
         messages = digest.render(groups, ongoing, post_time, now,
-                                 {"new": len(new), "checked": len(offers), "bot": bot_name})
+                                 {"new": len(new), "checked": len(offers), "bot": bot_name},
+                                 urgent, line)
         if not S.LIVE:
             messages[0] = "🧪 <b>پیش‌نمایش (حالت آزمایشی، به کانال ارسال نشد)</b>\n\n" + messages[0]
 
@@ -112,7 +116,7 @@ def run_digest(force: bool = False) -> int:
         try:
             if S.HERO_PHOTO and shown:
                 top = max(shown, key=lambda o: o["score"])
-                caption = digest.hero(top, post_time, now)
+                caption = digest.hero(top, post_time, now, nudge.offer_line(top, now.timestamp(), salt))
                 if not S.LIVE:
                     caption = "🧪 <b>پیش‌نمایش</b>\n\n" + caption
                 try:
@@ -122,7 +126,8 @@ def run_digest(force: bool = False) -> int:
                 except TelegramError:
                     tg.send(destination, caption, digest.hero_markup(top))  # same card, without the photo
                 time.sleep(S.SEND_DELAY)
-            tg.send_all(destination, messages, digest.channel_markup(bot_name))
+            tg.send_all(destination, messages,
+                        digest.channel_markup(bot_name, share=post_time.hour in S.SHARE_HOURS))
             posted = True
             if S.LIVE:
                 ts = time.time()

@@ -116,10 +116,13 @@ def _block(heading: str, items: list[dict], now: datetime) -> str:
     return "\n".join(lines)
 
 
-def hero(o: dict, post_time: datetime, now: datetime) -> str:
+def hero(o: dict, post_time: datetime, now: datetime, line: str = "") -> str:
     """Caption for the photo post of the hour's best deal (Telegram caption limit: 1024)."""
     lines = [f"⚡️ <b>داغ‌ترین آفر ساعت {post_time:%H:%M}</b>", "",
-             f"<b>{html.escape(short_title(o['title'], 90), quote=False)}</b>",
+             f"<b>{html.escape(short_title(o['title'], 90), quote=False)}</b>"]
+    if line:
+        lines.append(f"<i>{html.escape(line, quote=False)}</i>")
+    lines += [
              f"{RLM}<s>{o['rrp']:,}</s> ← <b>{o['price']:,} تومان</b>"]
     facts = [f"🔻 {o['discount']}% تخفیف"]
     if o.get("saving"):
@@ -139,11 +142,22 @@ def hero_markup(o: dict) -> dict:
     return {"inline_keyboard": [[{"text": "🛒 مشاهده و خرید در دیجی‌کالا", "url": o["url"]}]]}
 
 
-def channel_markup(bot_name: str) -> dict | None:
+def share_url(target: str, text: str) -> str:
+    from urllib.parse import quote
+    return f"https://t.me/share/url?url={quote(target, safe='')}&text={quote(text, safe='')}"
+
+
+def channel_markup(bot_name: str, share: bool = False) -> dict | None:
     row = [{"text": "🔥 همه‌ی شگفت‌انگیزها", "url": "https://www.digikala.com/incredible-offers/"}]
     if bot_name:
         row.insert(0, {"text": "🎯 آفر دلخواهم را بفرست", "url": f"https://t.me/{bot_name}?start=channel"})
-    return {"inline_keyboard": [row]}
+    rows = [row]
+    channel = S.CHANNEL_ID.lstrip("@")
+    if share and channel and not channel.lstrip("-").isdigit():
+        rows.append([{"text": "📤 برای دوستانت بفرست",
+                      "url": share_url(f"https://t.me/{channel}",
+                                       "هر ساعت بهترین آفرهای دیجی‌کالا، اینجا جمع می‌شود 👇")}])
+    return {"inline_keyboard": rows}
 
 
 _TAG = re.compile(r"<[^>]+>")
@@ -168,17 +182,39 @@ def _hard_split(text: str, limit: int) -> list[str]:
     return out
 
 
-def render(groups, ongoing, post_time: datetime, now: datetime, stats: dict) -> list[str]:
-    header = (f"🛍 <b>شگفت‌انگیزهای تازه‌ی ساعت {post_time:%H:%M}</b>\n"
-              f"{RLM}🆕 {stats['new']} آفر تازه از {stats['checked']:,} کالای بررسی‌شده")
+def urgency_badge(o: dict, now: datetime) -> str:
+    """A short TRUE scarcity note: units left, share sold or end time."""
+    if o.get("stock") and o["stock"] <= S.LOW_STOCK:
+        return f"⚠️ فقط {o['stock']} عدد"
+    if o.get("ends_at") and 0 < o["ends_at"] - now.timestamp() <= S.ENDING_SOON_HOURS * 3600:
+        return f"⏰ تا {datetime.fromtimestamp(o['ends_at'], S.TZ):%H:%M}"
+    if (o.get("sold_pct") or 0) >= S.MOSTLY_SOLD:
+        return f"🔥 {o['sold_pct']}% فروش رفته"
+    return ""
+
+
+def last_chance(offers: list[dict], now: datetime) -> list[dict]:
+    """Offers about to run out (by real stock / end time / share sold), best first."""
+    return [o for o in offers if urgency_badge(o, now)][: S.LAST_CHANCE_MAX]
+
+
+def render(groups, ongoing, post_time: datetime, now: datetime, stats: dict,
+           urgent: list[dict] | None = None, line: str = "") -> list[str]:
+    header = f"🛍 <b>شگفت‌انگیزهای تازه‌ی ساعت {post_time:%H:%M}</b>"
+    if line:
+        header += f"\n<i>{html.escape(line, quote=False)}</i>"
+    header += f"\n{RLM}🆕 {stats['new']} آفر تازه از {stats['checked']:,} کالای بررسی‌شده"
     blocks = []
+    if urgent:
+        blocks.append("⏳ <b>رو به اتمام</b>\n" + "\n".join(
+            f"{fmt_compact(o)} · {urgency_badge(o, now)}" for o in urgent))
     for name, items in groups:
         blocks.append(_block(f"{emoji_for(name)} <b>{html.escape(name, quote=False)}</b>", items, now))
     if ongoing:
         blocks.append("⏳ <b>همچنان برقرار</b>\n<blockquote expandable>"
                       + "\n".join(fmt_compact(o) for o in ongoing) + "</blockquote>")
     footer = (f"{RLM}🔻 تخفیف · ⭐ امتیاز کالا · 🔥 درصد جذابیت · ⏰ پایان آفر\n"
-              f"🔄 {now:%H:%M} · قیمت‌ها ممکن است تغییر کند · لینک‌ها مستقیم و بدون افیلیت")
+              f"🔄 {now:%H:%M} · قیمت‌ها ممکن است تغییر کند")
 
     limit = S.MESSAGE_LIMIT
     pieces = []

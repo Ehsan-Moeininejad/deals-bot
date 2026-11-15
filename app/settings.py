@@ -69,8 +69,8 @@ END_SHOW_HOURS = 6          # show the deal end time only when it ends within th
 # ---- personal rules bot (M3) -----------------------------------------------------
 PAGES_URL = "https://ehsan-moeininejad.github.io/deals-bot/"  # rule builder page (GitHub Pages)
 BOT_LISTEN_SECONDS = 60     # each bot run listens this long for new messages
-BOT_PROFILE_VERSION = 2     # bump to re-send the bot's menu, commands and description
-CHANNEL_PIN_VERSION = 2     # bump to post and pin a new intro message in the channel
+BOT_PROFILE_VERSION = 3     # bump to re-send the bot's menu, commands and description
+CHANNEL_PIN_VERSION = 3     # bump to post and pin a new intro message in the channel
 
 # ---- voucher codes (M2) -------------------------------------------------------------
 VOUCHER_API = "https://api.digikala.com/v1/dynamic-landing/voucher-center/"
@@ -89,3 +89,25 @@ CATEGORIES = [
     "محصولات بومی و محلی", "خانه و آشپزخانه", "لوازم خانگی برقی", "ورزش و سفر",
     "خودرو و موتورسیکلت", "ابزار آلات و تجهیزات", "کتاب، لوازم تحریر و هنر", "اسباب بازی",
 ]
+
+# ---- one-line nudges (true scarcity signals + optional free LLMs) ---------------------
+LOW_STOCK = 5               # "only N left" when the offer has this many units or fewer
+ENDING_SOON_HOURS = 2       # "ends at HH:MM" when the offer ends within this many hours
+MOSTLY_SOLD = 70            # "N% sold" from this share on
+LAST_CHANCE_MAX = 3         # items in the «رو به اتمام» strip at the top of the list
+LLM_TIMEOUT = 8             # seconds per provider before switching to the next one
+LLM_MAX_CHARS = 110
+# Free tiers only. Tried top to bottom; a provider is used only if its key secret is set.
+LLM_PROVIDERS = [
+    {"name": "gemini-flash", "kind": "gemini", "model": "gemini-2.0-flash", "key_env": "GEMINI_API_KEY"},
+    {"name": "gemini-flash-lite", "kind": "gemini", "model": "gemini-2.0-flash-lite", "key_env": "GEMINI_API_KEY"},
+    {"name": "openrouter-free", "kind": "openai", "url": "https://openrouter.ai/api/v1/chat/completions",
+     "model": "meta-llama/llama-3.3-70b-instruct:free", "key_env": "OPENROUTER_API_KEY"},
+    {"name": "groq", "kind": "openai", "url": "https://api.groq.com/openai/v1/chat/completions",
+     "model": "llama-3.3-70b-versatile", "key_env": "GROQ_API_KEY"},
+    {"name": "cloudflare", "kind": "cloudflare", "model": "@cf/meta/llama-3.1-8b-instruct",
+     "key_env": "CF_API_TOKEN", "account_env": "CF_ACCOUNT_ID"},
+]
+
+# ---- sharing (kept light: the bot is for finding offers, not for promoting itself) ------
+SHARE_HOURS = [21]          # the channel list carries a «send to friends» button only at these hours

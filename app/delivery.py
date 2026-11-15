@@ -10,7 +10,7 @@ import logging
 import time
 from datetime import datetime
 
-from . import digest
+from . import digest, nudge
 from . import rules as R
 from . import settings as S
 from . import state
@@ -38,7 +38,8 @@ def pick(user: dict, offers: list[dict], sent: dict, post_time: datetime, now_ts
 
 def render(items: list[dict], now: datetime) -> str:
     head = "آفر تازه" if len(items) == 1 else f"{len(items)} آفر تازه"
-    lines = [f"🎯 <b>{head} مطابق شرط‌های تو</b>", ""]
+    lines = [f"🎯 <b>{head} مطابق شرط‌های تو</b>",
+             f"<i>{nudge.rule_line(items[0], now.timestamp(), now.hour)}</i>", ""]
     lines += [digest.fmt_rich(i, o, now) for i, o in enumerate(items, 1)]
     lines.append(f"\n{digest.RLM}🔻 تخفیف · ⭐ امتیاز · 🔥 جذابیت")
     return "\n".join(lines)
@@ -51,7 +52,8 @@ PERSONAL_MARKUP = {"inline_keyboard": [[{"text": "📋 قانون‌های من"
 def compact_offers(scored: list[dict]) -> list[dict]:
     keep = ("dkp", "title", "url", "price", "discount", "saving", "rating", "votes",
             "cat1", "brand", "score", "ends_at", "source",
-            "seller_stars", "official", "jet", "nearby", "dk_stock", "lowest_30d")
+            "seller_stars", "official", "jet", "nearby", "dk_stock", "lowest_30d",
+            "sold_pct", "stock", "rrp", "image")
     return [{k: o.get(k) for k in keep} for o in scored[: S.LATEST_OFFERS_KEEP]]
 
 

@@ -50,7 +50,8 @@ def test_fresh_detects_new_and_changed_terms():
 def test_render_has_copyable_codes_and_groups():
     text = "\n".join(V.render(V.parse(WIDGETS), "🎟 test"))
     assert "<code>DSKKD_0408_1008</code>" in text
-    assert "🏷 <b>کالای دیجیتال</b>" in text and "کد را از صفحه‌ی کالاها بگیر" in text
+    assert "🔌 <b>کالای دیجیتال</b>" in text and "کد در صفحه‌ی کالاها" in text
+    assert "<b>500 هزار تومان</b> برای خرید بالای 1.5 میلیون" in text
 
 
 def test_due_once_per_hour_after_minute(tmp_state):
@@ -72,3 +73,29 @@ def test_run_posts_new_once_and_sends_to_subscribers(tmp_state, monkeypatch):
     targets = [c for c, *_ in tg.out]
     assert "1" in targets and "42" in targets and "43" not in targets
     assert V.run(tg, users, t.replace(hour=16)) == 0  # nothing new next hour
+
+
+def test_terms_and_clean_links():
+    assert V.terms("۳۰٪ تخفیف تا سقف ۱۰۰,۰۰۰ تومان") == ("30%", "تا سقف 100 هزار تومان")
+    assert V.terms("3% تخفیف برای خرید بالای 120میلیون تومان") == ("3%", "برای خرید بالای 120 میلیون")
+    assert V.terms("ارسال فروشنده رایگان") == ("ارسال رایگان", "")
+    url = V.clean_url("https://www.digikala.com/product-list/plp_1/?sort=7&camCode=2703&utm_campaign=x")
+    assert url == "https://www.digikala.com/product-list/plp_1/?sort=7"
+
+
+def test_expired_codes_are_struck_through(tmp_state):
+    calls = []
+
+    class TG(FakeTG):
+        def call(self, method, payload):
+            calls.append(payload)
+            return {}
+
+        def send_all(self, chat_id, messages, last_markup=None):
+            return [77]
+
+    items = V.parse(WIDGETS)
+    V._post(TG(), "@ch", items, "head", "", V.CHANNEL_MARKUP)
+    assert V.mark_expired(TG(), {"RVFGQTZZ"}) == 1          # the promo code left the page
+    assert "⌛️" in calls[0]["text"] and calls[0]["message_id"] == 77
+    assert V.mark_expired(TG(), {"RVFGQTZZ"}) == 0          # not edited twice
