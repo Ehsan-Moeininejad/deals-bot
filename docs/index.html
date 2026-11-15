@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ساخت قانون آفر — deals-bot</title>
+<title>تخفیف‌یاب — ساخت قانون آفر</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
@@ -38,7 +38,7 @@
 </head>
 <body>
 <main>
-  <h1>🎯 ساخت قانون آفر</h1>
+  <h1>🎯 تخفیف‌یاب — ساخت قانون آفر</h1>
   <p class="lead">هر شرطی را که مهم است انتخاب کن؛ هیچ‌کدام الزامی نیست. بعد دکمه‌ی پایین را بزن تا قانون در بات ذخیره شود. این صفحه هیچ اطلاعاتی از تو ذخیره نمی‌کند.</p>
 
   <section class="botin" id="botbox">
@@ -133,7 +133,8 @@ const FLAGS = {o:"🏷 فقط فروشنده‌ی رسمی", l:"📉 کمتری�
 const ship = new Set(), flags = new Set();
 const tg = window.Telegram && window.Telegram.WebApp;
 const inApp = !!(tg && tg.initData);
-if (inApp) { tg.ready(); tg.expand(); document.getElementById("brandhint").style.display = "none"; }
+const viaMenu = inApp && tg.initDataUnsafe && tg.initDataUnsafe.query_id;
+if (inApp) { tg.ready(); tg.expand(); if (!viaMenu) document.getElementById("brandhint").style.display = "none"; }
 function chips(box, map, set) {
   Object.entries(map).forEach(([k, label]) => {
     const el = document.createElement("div"); el.className = "chip"; el.textContent = label;
@@ -176,7 +177,7 @@ function update() {
   const code = parts.join("_");
   $("code").textContent = code;
   const bot = botParam || ($("bot").value || "").replace(/[^A-Za-z0-9_]/g, "");
-  const bad = (hi && lo > hi) || code.length > 64 || (!bot && !inApp);
+  const bad = (hi && lo > hi) || code.length > 64 || !bot;
   window.__code = code;
   $("go").classList.toggle("off", bad);
   $("go").href = bad ? "#" : `https://t.me/${bot}?start=${code}`;
@@ -190,7 +191,9 @@ if (inApp) {
   $("go").addEventListener("click", e => {
     e.preventDefault();
     if ($("go").classList.contains("off")) return;
-    tg.sendData(JSON.stringify({code: window.__code, bin: list("bin"), bout: list("bout")}));
+    const canSend = !(tg.initDataUnsafe && tg.initDataUnsafe.query_id); // keyboard-button launch
+    if (canSend) tg.sendData(JSON.stringify({code: window.__code, bin: list("bin"), bout: list("bout")}));
+    else { tg.openTelegramLink($("go").href); tg.close(); }  // menu-button launch: brands via /brand
   });
 }
 update();

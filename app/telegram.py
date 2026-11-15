@@ -70,10 +70,15 @@ class Telegram:
         except TelegramError:
             pass  # callbacks older than ~15 minutes can no longer be answered
 
-    def send_all(self, chat_id: str, messages: list[str]) -> list[int]:
+    def send_all(self, chat_id: str, messages: list[str], last_markup: dict | None = None) -> list[int]:
+        """Send several messages; last_markup (buttons) goes under the last one."""
         ids = []
         for i, m in enumerate(messages):
             if i:
                 time.sleep(S.SEND_DELAY)
-            ids.append(self.send(chat_id, m))
+            ids.append(self.send(chat_id, m, last_markup if i == len(messages) - 1 else None))
         return ids
+
+    def call(self, method: str, payload: dict) -> dict:
+        """Any other Bot API method (used for one-time bot profile setup)."""
+        return self._call(method, payload)

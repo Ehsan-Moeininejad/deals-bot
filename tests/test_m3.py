@@ -262,3 +262,44 @@ def test_bot_accepts_web_app_data(tmp_state):
                                           "web_app_data": {"data": data}}})
     rule = b.users["42"]["rules"][0]
     assert rule["smin"] == 4.0 and rule["bin"] == ["اپل"]
+
+
+def test_channel_start_payload_is_a_plain_welcome(tmp_state):
+    tg = FakeTG()
+    b = B.Bot(tg, "dk_bot")
+    b.handle(msg("/start channel"))
+    assert b.users["42"]["rules"] == [] and "سلام" in tg.out[-1][1]
+
+
+def test_profile_setup_runs_once(tmp_state):
+    calls = []
+
+    class TG(FakeTG):
+        def call(self, method, payload):
+            calls.append(method)
+            return {}
+
+    B.setup_profile(TG(), "dk_bot")
+    B.setup_profile(TG(), "dk_bot")
+    assert calls.count("setMyCommands") == 1 and "setChatMenuButton" in calls
+
+
+def test_channel_intro_posted_once_and_pin_retried(tmp_state, monkeypatch):
+    monkeypatch.setattr(S, "CHANNEL_ID", "@ch")
+    pins = {"fail": True, "calls": 0}
+
+    class TG(FakeTG):
+        def call(self, method, payload):
+            pins["calls"] += 1
+            if pins["fail"]:
+                raise TelegramError("no right", 400)
+            return {}
+
+    tg = TG()
+    B.pin_intro(tg, "dk_bot")
+    B.pin_intro(tg, "dk_bot")
+    assert len(tg.out) == 1 and "دستیار خرید" in tg.out[0][1]   # posted once
+    pins["fail"] = False
+    B.pin_intro(tg, "dk_bot")
+    assert json.loads((tmp_state / "channel_pin.json").read_text("utf-8"))["pinned"]
+    assert len(tg.out) == 1

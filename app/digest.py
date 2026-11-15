@@ -111,7 +111,7 @@ def render(groups, ongoing, post_time: datetime, now: datetime, stats: dict) -> 
         f"🆕 جدید این ساعت: {stats['new']}  |  بررسی‌شده: {stats['checked']:,}\n"
         f"🔄 به‌روزرسانی {now:%H:%M} — قیمت‌ها ممکن است تغییر کنند. لینک‌ها مستقیم و بدون افیلیت است."
         + ("\n" if stats.get("bot") else "")
-        + (f"🎯 آفرهای دلخواه خودت را مستقیم بگیر: @{stats['bot']}" if stats.get("bot") else "")
+        + (f"🎯 آفرهای دلخواه خودت را از تخفیف‌یاب بگیر: @{stats['bot']}" if stats.get("bot") else "")
     )
 
     limit = S.MESSAGE_LIMIT

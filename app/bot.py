@@ -40,6 +40,73 @@ HELP = (
 )
 
 
+COMMANDS = [
+    ("start", "شروع و قانون‌های آماده"),
+    ("rules", "قانون‌های من"),
+    ("brand", "برند شامل یا مستثنا برای یک قانون"),
+    ("pause", "توقف ارسال"),
+    ("resume", "ادامه‌ی ارسال"),
+    ("export", "دیدن داده‌ی من"),
+    ("delete_me", "پاک‌کردن کامل داده‌ی من"),
+    ("help", "راهنما"),
+]
+DESCRIPTION = (
+    "تخفیف‌یاب بهترین آفرهای دیجی‌کالا را طبق شرایط خودت می‌فرستد: دسته، درصد و مبلغ تخفیف، "
+    "بازه‌ی قیمت، برند، امتیاز کالا و فروشنده، ارسال سریع یا ۳ ساعته.\n"
+    "رایگان و متن‌باز، لینک‌ها مستقیم و بدون افیلیت. Start را بزن."
+)
+SHORT_DESCRIPTION = "تخفیف‌یاب: آفرهای دیجی‌کالا طبق شرایط خودت — رایگان و بدون افیلیت"
+BOT_NAME = "تخفیف‌یاب"
+
+
+def setup_profile(tg: Telegram, username: str) -> None:
+    """Menu button, command list and descriptions. Sent once per BOT_PROFILE_VERSION."""
+    if state.read("bot_profile.json", {}).get("v") == S.BOT_PROFILE_VERSION:
+        return
+    tg.call("setMyName", {"name": BOT_NAME})
+    tg.call("setMyCommands", {"commands": [{"command": c, "description": d} for c, d in COMMANDS]})
+    tg.call("setMyDescription", {"description": DESCRIPTION})
+    tg.call("setMyShortDescription", {"short_description": SHORT_DESCRIPTION})
+    tg.call("setChatMenuButton", {"menu_button": {
+        "type": "web_app", "text": "ساخت قانون", "web_app": {"url": builder_url(username)}}})
+    state.write("bot_profile.json", {"v": S.BOT_PROFILE_VERSION})
+    log.info("bot profile updated to version %s", S.BOT_PROFILE_VERSION)
+
+
+def intro_text(username: str) -> str:
+    return (
+        "🛍 <b>تخفیف‌یاب — دستیار خرید از دیجی‌کالا</b>\n\n"
+        "هر ساعت بهترین آفرهای شگفت‌انگیز دیجی‌کالا همین‌جا، دسته‌بندی‌شده و با درصد جذابیت.\n\n"
+        f"🎯 <b>آفرهای مخصوص خودت را بگیر:</b> در @{username} بگو دنبال چه هستی — دسته، درصد یا مبلغ تخفیف، "
+        "بازه‌ی قیمت، برند، امتیاز کالا و فروشنده، ارسال سریع یا ۳ ساعته — "
+        "و هر وقت پیدا شد مستقیم برایت می‌فرستد.\n\n"
+        "رایگان و متن‌باز · لینک‌ها مستقیم و بدون افیلیت · مستقل از دیجی‌کالا"
+    )
+
+
+def pin_intro(tg: Telegram, username: str) -> None:
+    """Post the intro once per CHANNEL_PIN_VERSION and pin it. If pinning fails
+    (the bot lacks the right), the post is kept and only the pin is retried."""
+    if not S.CHANNEL_ID or not username:
+        return
+    rec = state.read("channel_pin.json", {})
+    if rec.get("v") != S.CHANNEL_PIN_VERSION:
+        markup = {"inline_keyboard": [[{"text": "🎯 شروع دستیار خرید",
+                                        "url": f"https://t.me/{username}?start=channel"}]]}
+        rec = {"v": S.CHANNEL_PIN_VERSION, "id": tg.send(S.CHANNEL_ID, intro_text(username), markup),
+               "pinned": False}
+        state.write("channel_pin.json", rec)
+    if not rec.get("pinned"):
+        try:
+            tg.call("pinChatMessage", {"chat_id": S.CHANNEL_ID, "message_id": rec["id"],
+                                       "disable_notification": True})
+            rec["pinned"] = True
+            state.write("channel_pin.json", rec)
+            log.info("channel intro pinned")
+        except TelegramError as exc:
+            log.warning("pin failed (%s): give the bot the right to edit/pin messages", exc.code)
+
+
 def builder_url(bot_username: str) -> str:
     return f"{S.PAGES_URL}?bot={bot_username}"
 
@@ -190,12 +257,12 @@ class Bot:
         if cmd == "/start":
             u = self.user(cid)
             self.touch(u)  # also clears an earlier "blocked" mark
-            if args:
+            if args and args[0] != "channel":  # "channel" = came from the channel button
                 self.add_rule(cid, args[0])
             else:
                 self.reply(cid, "دکمه‌ی «🛠 ساخت قانون» پایین صفحه، صفحه‌ی ساخت قانون را داخل تلگرام باز می‌کند.",
                            app_keyboard(self.username))
-                self.reply(cid, "سلام 👋\nبهترین آفرهای دیجی‌کالا را طبق شرایط خودت برایت می‌فرستم.\n"
+                self.reply(cid, "سلام 👋 من تخفیف‌یاب هستم.\nبهترین آفرهای دیجی‌کالا را طبق شرایط خودت برایت می‌فرستم.\n"
                                 "یک قانون آماده انتخاب کن یا قانون دلخواهت را بساز.\n\n" + HELP,
                            welcome_markup(self.username))
         elif cmd == "/add" and args:
@@ -215,6 +282,8 @@ class Bot:
             self.export(cid)
         elif cmd == "/delete_me":
             self.delete_me(cid)
+        elif cmd == "/help":
+            self.reply(cid, HELP, welcome_markup(self.username))
         else:
             self.reply(cid, HELP, welcome_markup(self.username))
 
@@ -243,6 +312,14 @@ class Bot:
 
 def run(tg: Telegram) -> int:
     me = tg.get_me()
+    try:
+        setup_profile(tg, me.get("username", ""))
+    except TelegramError as exc:
+        log.warning("profile setup failed (%s)", exc.code)
+    try:
+        pin_intro(tg, me.get("username", ""))
+    except TelegramError as exc:
+        log.warning("channel intro failed (%s)", exc.code)
     bot = Bot(tg, me.get("username", ""))
     offset = state.read("bot_offset.json", {}).get("offset", 0)
     deadline = time.time() + S.BOT_LISTEN_SECONDS

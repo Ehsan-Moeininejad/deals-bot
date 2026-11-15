@@ -65,6 +65,8 @@ END_SHOW_HOURS = 6          # show the deal end time only when it ends within th
 # ---- personal rules bot (M3) -----------------------------------------------------
 PAGES_URL = "https://ehsan-moeininejad.github.io/deals-bot/"  # rule builder page (GitHub Pages)
 BOT_LISTEN_SECONDS = 60     # each bot run listens this long for new messages
+BOT_PROFILE_VERSION = 1     # bump to re-send the bot's menu, commands and description
+CHANNEL_PIN_VERSION = 1     # bump to post and pin a new intro message in the channel
 MAX_RULES_PER_USER = 5
 USER_MAX_ITEMS = 10         # offers per personal message
 USER_DAILY_MESSAGES = 20    # hard cap of personal messages per user per day

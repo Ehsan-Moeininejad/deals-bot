@@ -110,7 +110,10 @@ def run_digest(force: bool = False) -> int:
             time.sleep(wait)
 
         try:
-            tg.send_all(destination, messages)
+            markup = ({"inline_keyboard": [[{"text": "🎯 آفرهای دلخواه خودم را بفرست",
+                                              "url": f"https://t.me/{bot_name}?start=channel"}]]}
+                      if bot_name else None)
+            tg.send_all(destination, messages, markup)
             posted = True
             if S.LIVE:
                 ts = time.time()
