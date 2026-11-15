@@ -48,8 +48,12 @@ def baseline(offer: dict, hist: list, today: int) -> tuple[float, bool]:
     return float(offer["rrp"]), False
 
 
-def evaluate(offer: dict, hist: list, today: int, now_ts: float) -> dict | None:
-    """Return the offer enriched with score fields, or None if it is not eligible."""
+def enrich(offer: dict, hist: list, today: int, now_ts: float) -> dict | None:
+    """Score any valid live offer, WITHOUT the channel's quality thresholds.
+
+    Personal rules use this, so a user may ask for e.g. 3.5 stars or 10% off.
+    Returns None only for broken, sold-out or expired offers.
+    """
     price, rrp = offer["price"], offer["rrp"]
     if not price or not rrp or rrp <= price:
         return None
@@ -57,31 +61,45 @@ def evaluate(offer: dict, hist: list, today: int, now_ts: float) -> dict | None:
         return None
     if offer["ends_at"] and offer["ends_at"] <= now_ts:
         return None
-    if offer["rating"] is None or offer["rating"] < S.MIN_RATING or offer["votes"] < S.MIN_VOTES:
-        return None
-
     base, verified = baseline(offer, hist, today)
     discount = 1 - price / base
-    if discount * 100 < S.MIN_DISCOUNT:
+    if discount <= 0:
         return None
-
     d = _clip(discount, 0, S.MAX_DISCOUNT) / S.MAX_DISCOUNT
     if not verified:
         d *= S.COLD_START_FACTOR
     score = (
         S.W_DISCOUNT * d
-        + S.W_RATING * rating_confidence(offer["rating"], offer["votes"])
+        + S.W_RATING * rating_confidence(offer["rating"] or 0, offer["votes"])
         + S.W_URGENCY * urgency(offer, now_ts)
     )
     out = dict(offer)
-    out.update(score=score, discount=round(discount * 100), verified=verified)
+    out.update(score=score, discount=round(discount * 100), verified=verified,
+               saving=max(0, round(base - price)))
     return out
 
 
-def select(offers: list[dict], history: dict, today: int, now_ts: float) -> list[dict]:
+def attractiveness(offer: dict) -> int:
+    """The score as a 0-100 percentage, shown to readers as «جذابیت»."""
+    return round(_clip(offer["score"], 0, 1) * 100)
+
+
+def evaluate(offer: dict, hist: list, today: int, now_ts: float) -> dict | None:
+    """Channel filter: enrich() plus the quality thresholds in settings."""
+    if offer["rating"] is None or offer["rating"] < S.MIN_RATING or offer["votes"] < S.MIN_VOTES:
+        return None
+    e = enrich(offer, hist, today, now_ts)
+    if e is None or e["discount"] < S.MIN_DISCOUNT:
+        return None
+    return e
+
+
+def select(offers: list[dict], history: dict, today: int, now_ts: float, channel: bool = True) -> list[dict]:
+    """Channel list (channel=True) or every valid offer for personal rules."""
+    fn = evaluate if channel else enrich
     scored = []
     for o in offers:
-        e = evaluate(o, history.get(str(o["dkp"]), []), today, now_ts)
+        e = fn(o, history.get(str(o["dkp"]), []), today, now_ts)
         if e:
             scored.append(e)
     scored.sort(key=lambda x: x["score"], reverse=True)

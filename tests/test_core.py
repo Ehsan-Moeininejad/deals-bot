@@ -30,7 +30,7 @@ def test_parse_converts_rial_to_toman_and_rating_scale():
     o = offer()
     assert o["price"] == 800_000 and o["rrp"] == 1_200_000
     assert o["rating"] == 4.4          # 88/100 -> 4.4/5
-    assert o["url"] == "https://www.digikala.com/product/dkp-1/x/"
+    assert o["url"] == "https://www.digikala.com/product/dkp-1/"
     assert offer(rate=4.5)["rating"] == 4.5
 
 
@@ -98,7 +98,7 @@ def test_render_escapes_html_and_respects_limit():
     groups = digest.group(many)
     assert len(groups) <= S.MAX_GROUPS and all(len(i) <= S.ITEMS_PER_GROUP for _, i in groups)
     msgs = digest.render(groups, many[:3], NOW, NOW, {"new": 60, "checked": 1182})
-    assert all(len(m) <= S.MESSAGE_LIMIT + 200 for m in msgs)
+    assert all(digest.vlen(m) <= S.MESSAGE_LIMIT + 200 for m in msgs)
     joined = "\n".join(msgs)
     assert "&lt;b&gt;" in joined and "<b>تست</b>" not in joined
     assert "بهترین آفرهای ساعت 13:00" in msgs[0]

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ساخت قانون آفر — deals-bot</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#9aa3b2; --accent:#ef394e; --ok:#3ecf8e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:Vazirmatn, Tahoma, sans-serif; line-height:1.7; }
+  main { max-width:640px; margin:0 auto; padding:20px 16px 120px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 20px; font-size:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  .hint { color:var(--muted); font-size:12.5px; margin-top:6px; }
+  .cats { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:6px 12px; cursor:pointer; font-size:13.5px; user-select:none; }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .row { display:flex; gap:10px; align-items:center; }
+  .row > label { flex:1; font-size:13.5px; color:var(--muted); }
+  input[type=number], input[type=text], select { width:100%; background:#0f1218; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font:inherit; direction:ltr; text-align:right; }
+  input[type=range] { width:100%; accent-color:var(--accent); direction:ltr; }
+  .val { min-width:56px; text-align:left; font-weight:700; direction:ltr; }
+  .modes { display:flex; gap:8px; }
+  .modes .chip { flex:1; text-align:center; }
+  .bar { position:fixed; inset:auto 0 0 0; background:#0b0d11ee; border-top:1px solid var(--line); padding:12px 16px; backdrop-filter:blur(6px); }
+  .bar .in { max-width:640px; margin:0 auto; }
+  .summary { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .go { display:block; width:100%; text-align:center; background:var(--accent); color:#fff; text-decoration:none; padding:12px; border-radius:12px; font-weight:700; }
+  .go.off { opacity:.4; pointer-events:none; }
+  code { direction:ltr; display:inline-block; background:#0f1218; border:1px solid var(--line); border-radius:8px; padding:2px 8px; font-size:12.5px; }
+  .botin { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎯 ساخت قانون آفر</h1>
+  <p class="lead">هر شرطی را که مهم است انتخاب کن؛ هیچ‌کدام الزامی نیست. بعد دکمه‌ی پایین را بزن تا قانون در بات ذخیره شود. این صفحه هیچ اطلاعاتی از تو ذخیره نمی‌کند.</p>
+
+  <section class="botin" id="botbox">
+    <h2>نام کاربری بات</h2>
+    <input type="text" id="bot" placeholder="مثلاً dk_deals_bot" style="width:100%;background:#0f1218;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;direction:ltr">
+  </section>
+
+  <section>
+    <h2>دسته‌بندی</h2>
+    <div class="cats" id="cats"></div>
+    <div class="hint">هیچ‌کدام انتخاب نشود = همه‌ی دسته‌ها</div>
+  </section>
+
+  <section>
+    <h2>حداقل درصد تخفیف</h2>
+    <div class="row"><input type="range" id="d" min="0" max="90" step="5" value="0"><span class="val" id="dv"></span></div>
+  </section>
+
+  <section>
+    <h2>حداقل مبلغ تخفیف</h2>
+    <label style="font-size:13.5px;color:var(--muted)">میلیون تومان (0 = مهم نیست)<input type="number" id="a" min="0" step="0.1" value="0"></label>
+  </section>
+
+  <section>
+    <h2>بازه‌ی قیمت</h2>
+    <div class="row">
+      <label>از (میلیون تومان)<input type="number" id="pmin" min="0" step="0.1" value="0"></label>
+      <label>تا (میلیون تومان، 0 = بدون سقف)<input type="number" id="pmax" min="0" step="0.1" value="0"></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>برند</h2>
+    <div class="row">
+      <label>فقط این برندها<input type="text" id="bin" placeholder="مثلاً سامسونگ، شیائومی"></label>
+      <label>به‌جز این برندها<input type="text" id="bout" placeholder="مثلاً متفرقه"></label>
+    </div>
+    <div class="hint" id="brandhint">برند فقط وقتی ذخیره می‌شود که این صفحه را با دکمه‌ی «🛠 ساخت قانون» داخل بات باز کرده باشی. وگرنه بعداً با <code>/brand</code> اضافه کن.</div>
+  </section>
+
+  <section>
+    <h2>ارسال</h2>
+    <div class="cats" id="ship"></div>
+    <div class="hint">چند گزینه = هر کدام کافی است. هیچ‌کدام = مهم نیست.</div>
+  </section>
+
+  <section>
+    <h2>فروشنده و قیمت</h2>
+    <div class="row">
+      <label>حداقل امتیاز فروشنده
+        <select id="s"><option value="0">مهم نیست</option><option value="35">3.5</option><option value="40">4.0</option><option value="45">4.5</option></select>
+      </label>
+    </div>
+    <div class="cats" id="flags" style="margin-top:10px"></div>
+  </section>
+
+  <section>
+    <h2>کیفیت کالا</h2>
+    <div class="row">
+      <label>حداقل امتیاز
+        <select id="r"><option value="0" selected>مهم نیست</option><option value="35">3.5</option><option value="40">4.0</option><option value="42">4.2</option><option value="45">4.5</option></select>
+      </label>
+      <label>حداقل تعداد رأی
+        <select id="v"><option value="0" selected>مهم نیست</option><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="200">200</option></select>
+      </label>
+    </div>
+  </section>
+
+  <section>
+    <h2>زمان ارسال</h2>
+    <div class="modes" id="modes">
+      <div class="chip on" data-m="i">⚡ فوری (هر بار که پیدا شد)</div>
+      <div class="chip" data-m="d">🗓 روزانه (ساعت 21)</div>
+    </div>
+  </section>
+</main>
+
+<div class="bar"><div class="in">
+  <div class="summary" id="summary"></div>
+  <a class="go" id="go" href="#" target="_blank" rel="noopener">ارسال به بات در تلگرام</a>
+  <div class="hint">یا این کد را با <code>/add</code> در بات بفرست: <code id="code"></code></div>
+</div></div>
+
+<script>
+// Must match app/settings.py CATEGORIES (same order) and app/rules.py format.
+const CATS = ["کالای دیجیتال","آرایشی و بهداشتی","کالاهای سوپرمارکتی","مد و پوشاک","طلا و نقره","سلامت و پزشکی","پت شاپ","مادر و کودک","محصولات بومی و محلی","خانه و آشپزخانه","لوازم خانگی برقی","ورزش و سفر","خودرو و موتورسیکلت","ابزار آلات و تجهیزات","کتاب، لوازم تحریر و هنر","اسباب بازی"];
+const B36 = "0123456789abcdefghijklmnopqrstuvwxyz";
+const $ = id => document.getElementById(id);
+const picked = new Set(); let mode = "i";
+const SHIP = {j:"🚀 ارسال سریع امروز", n:"⏱ ارسال ۳ ساعته", w:"📦 موجود در انبار دیجی‌کالا"};
+const FLAGS = {o:"🏷 فقط فروشنده‌ی رسمی", l:"📉 کمترین قیمت ۳۰ روز اخیر"};
+const ship = new Set(), flags = new Set();
+const tg = window.Telegram && window.Telegram.WebApp;
+const inApp = !!(tg && tg.initData);
+if (inApp) { tg.ready(); tg.expand(); document.getElementById("brandhint").style.display = "none"; }
+function chips(box, map, set) {
+  Object.entries(map).forEach(([k, label]) => {
+    const el = document.createElement("div"); el.className = "chip"; el.textContent = label;
+    el.onclick = () => { set.has(k) ? set.delete(k) : set.add(k); el.classList.toggle("on"); update(); };
+    document.getElementById(box).appendChild(el);
+  });
+}
+chips("ship", SHIP, ship); chips("flags", FLAGS, flags);
+const params = new URLSearchParams(location.search);
+const botParam = (params.get("bot") || "").replace(/[^A-Za-z0-9_]/g, "");
+if (!botParam) $("botbox").style.display = "block";
+
+CATS.forEach((name, i) => {
+  const el = document.createElement("div");
+  el.className = "chip"; el.textContent = name;
+  el.onclick = () => { picked.has(i) ? picked.delete(i) : picked.add(i); el.classList.toggle("on"); update(); };
+  $("cats").appendChild(el);
+});
+document.querySelectorAll("#modes .chip").forEach(el => el.onclick = () => {
+  document.querySelectorAll("#modes .chip").forEach(x => x.classList.remove("on"));
+  el.classList.add("on"); mode = el.dataset.m; update();
+});
+["d","a","pmin","pmax","r","v","s","bot","bin","bout"].forEach(id => $(id).addEventListener("input", update));
+
+const units = id => Math.max(0, Math.round((parseFloat($(id).value) || 0) * 10)); // 1 unit = 100,000 Toman
+
+function update() {
+  const d = +$("d").value; $("dv").textContent = d + "%";
+  const parts = [];
+  if (picked.size) parts.push("c" + [...picked].sort((x, y) => x - y).map(i => B36[i]).join(""));
+  if (d) parts.push("d" + d);
+  const a = units("a"); if (a) parts.push("a" + a);
+  const lo = units("pmin"), hi = units("pmax"); if (lo || hi) parts.push(`p${lo}-${hi}`);
+  if (+$("r").value) parts.push("r" + $("r").value);
+  if (+$("v").value) parts.push("v" + $("v").value);
+  if (+$("s").value) parts.push("s" + $("s").value);
+  if (ship.size) parts.push("f" + [...ship].sort().join(""));
+  if (flags.size) parts.push("q" + [...flags].sort().join(""));
+  parts.push("m" + mode);
+  const code = parts.join("_");
+  $("code").textContent = code;
+  const bot = botParam || ($("bot").value || "").replace(/[^A-Za-z0-9_]/g, "");
+  const bad = (hi && lo > hi) || code.length > 64 || (!bot && !inApp);
+  window.__code = code;
+  $("go").classList.toggle("off", bad);
+  $("go").href = bad ? "#" : `https://t.me/${bot}?start=${code}`;
+  const cats = picked.size ? [...picked].map(i => CATS[i]).join("، ") : "همه‌ی دسته‌ها";
+  $("summary").textContent = (hi && lo > hi) ? "⚠️ «از» نباید بیشتر از «تا» باشد." : cats + (d ? ` | تخفیف ≥ ${d}%` : "") + (a ? ` | مبلغ تخفیف ≥ ${a/10} میلیون` : "") + (ship.size || flags.size || +$("s").value ? " | + شرط‌های دیگر" : "");
+}
+const list = id => ($(id).value || "").split(/[،,]/).map(x => x.trim()).filter(Boolean).slice(0, 10);
+if (inApp) {
+  $("go").textContent = "ذخیره‌ی قانون در بات";
+  $("go").removeAttribute("target");
+  $("go").addEventListener("click", e => {
+    e.preventDefault();
+    if ($("go").classList.contains("off")) return;
+    tg.sendData(JSON.stringify({code: window.__code, bin: list("bin"), bout: list("bout")}));
+  });
+}
+update();
+</script>
+</body>
+</html>

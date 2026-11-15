@@ -25,10 +25,10 @@ HEADERS = {
 }
 
 
-def fetch_page(session: requests.Session, page: int) -> dict | None:
+def fetch_page(session: requests.Session, page: int, url: str | None = None) -> dict | None:
     for attempt in range(1, S.MAX_RETRIES + 1):
         try:
-            resp = session.get(S.API_URL, params={"page": page}, timeout=S.REQUEST_TIMEOUT)
+            resp = session.get(url or S.API_URL, params={"page": page}, timeout=S.REQUEST_TIMEOUT)
             if resp.status_code == 429:
                 time.sleep(5 * attempt)
                 continue
@@ -91,6 +91,26 @@ def _ends_at(price: dict, now_ts: float | None = None) -> float | None:
     return _epoch(price.get("time"))
 
 
+def _extras(p: dict, variant: dict) -> dict:
+    """Seller and delivery facts used by personal rules (all verified on the live API)."""
+    seller = variant.get("seller") or {}
+    vprops = variant.get("properties") or {}
+    providers = (variant.get("shipment_methods") or {}).get("providers") or []
+    modes = {pr.get("shipping_mode") for pr in providers}
+    try:
+        stars = float(seller.get("stars")) if seller.get("stars") is not None else None
+    except (TypeError, ValueError):
+        stars = None
+    return {
+        "seller_stars": stars,                                          # out of 5
+        "official": bool((seller.get("properties") or {}).get("is_official")),
+        "jet": "jet" in modes,                                          # fast same-day (Tehran/Karaj)
+        "nearby": bool(vprops.get("nearby_seller_shipment")),           # 3-hour nearby delivery
+        "dk_stock": bool(vprops.get("in_digikala_warehouse")),
+        "lowest_30d": bool(variant.get("has_best_price_in_last_month")),
+    }
+
+
 def parse_product(p: dict) -> dict:
     variant = p.get("default_variant") or {}
     price = variant.get("price") or {}
@@ -112,31 +132,68 @@ def parse_product(p: dict) -> dict:
         "votes": int(rating.get("count") or 0),
         "ends_at": _ends_at(price),
         "lightning": bool(price.get("is_lightening_deal")),
-        "url": f"https://www.digikala.com{uri}" if uri else "",
+        **_extras(p, variant),
+        # short product link (verified to open the same page): keeps messages compact
+        "url": f"https://www.digikala.com/product/dkp-{p.get('id')}/" if p.get("id") else
+               (f"https://www.digikala.com{uri}" if uri else ""),
     }
 
 
+def find_listing(data: dict, list_key: str | None) -> dict:
+    """Return the {products, pager} block of a response.
+
+    With list_key the block is taken by name; without it (unknown landing pages)
+    the first dict that holds a non-empty "products" list is used.
+    """
+    if list_key:
+        return data.get(list_key) or {}
+    stack = [data]
+    while stack:
+        node = stack.pop(0)
+        if isinstance(node, dict):
+            if isinstance(node.get("products"), list) and node["products"]:
+                return node
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(x for x in node if isinstance(x, (dict, list)))
+    return {}
+
+
 def crawl() -> tuple[list[dict], int]:
+    """Crawl every source. Returns (offers, expected total of the FIRST source)."""
     session = requests.Session()
     session.headers.update(HEADERS)
     offers: list[dict] = []
     seen: set = set()
+    first_expected = 0
+    for i, src in enumerate(S.SOURCES):
+        found, expected = crawl_source(session, src, seen)
+        offers += found
+        if i == 0:
+            first_expected = expected
+        log.info("source %s: %s new unique products", src["name"], len(found))
+    log.info("collected %s unique products from %s source(s)", len(offers), len(S.SOURCES))
+    return offers, first_expected
+
+
+def crawl_source(session: requests.Session, src: dict, seen: set) -> tuple[list[dict], int]:
+    offers: list[dict] = []
     page, total_pages, expected = 1, None, 0
 
     while page <= S.MAX_PAGES:
-        data = fetch_page(session, page)
+        data = fetch_page(session, page, src["url"])
         if data is None:
             page += 1
             if total_pages and page > total_pages:
                 break
             continue
-        listing = data.get("incredible_products_list") or {}
+        listing = find_listing(data, src.get("list_key"))
         products = listing.get("products") or []
         pager = listing.get("pager") or {}
         if total_pages is None and pager.get("total_pages"):
             total_pages = int(pager["total_pages"])
             expected = int(pager.get("total_items") or 0)
-            log.info("pager: %s products, %s pages", expected, total_pages)
+            log.info("%s pager: %s products, %s pages", src["name"], expected, total_pages)
         if not products:
             break
         for raw in products:
@@ -144,11 +201,12 @@ def crawl() -> tuple[list[dict], int]:
             if dkp in seen:
                 continue
             seen.add(dkp)
-            offers.append(parse_product(raw))
+            item = parse_product(raw)
+            item["source"] = src["name"]
+            offers.append(item)
         if total_pages and page >= total_pages:
             break
         page += 1
         time.sleep(S.DELAY_BETWEEN_PAGES)
 
-    log.info("collected %s unique products", len(offers))
     return offers, expected

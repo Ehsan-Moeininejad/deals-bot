@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime
 
 from . import settings as S
+from .scoring import attractiveness
 
 CATEGORY_EMOJI = [
     ("موبایل", "📱"), ("گوشی", "📱"), ("لپ", "💻"), ("کامپیوتر", "💻"),
@@ -13,6 +15,9 @@ CATEGORY_EMOJI = [
     ("سلامت", "💊"), ("کتاب", "📚"), ("ورزش", "⚽"), ("خودرو", "🚗"),
     ("اسباب", "🧸"), ("کودک", "🧸"), ("سوپرمارکت", "🛒"), ("خوار", "🛒"),
 ]
+
+
+SOURCE_LABELS = {src["name"]: src.get("label", "") for src in S.SOURCES}
 
 
 def emoji_for(name: str) -> str:
@@ -52,7 +57,11 @@ def group(new: list[dict]) -> list[tuple[str, list[dict]]]:
 def _fmt_item(i: int, o: dict, now: datetime) -> str:
     title = html.escape(o["title"][:70], quote=False)
     url = html.escape(o["url"], quote=True)
-    parts = [f"−{o['discount']}%", f"{o['price']:,} تومان", f"⭐ {o['rating']:.1f}"]
+    parts = [f"−{o['discount']}%", f"{o['price']:,} تومان", f"⭐ {o['rating'] or 0:.1f}",
+             f"🔥 جذابیت {attractiveness(o)}%"]
+    label = SOURCE_LABELS.get(o.get("source", ""))
+    if label:
+        parts.append(html.escape(label, quote=False))
     if o["ends_at"]:
         left = o["ends_at"] - now.timestamp()
         if 0 < left <= S.END_SHOW_HOURS * 3600:
@@ -69,10 +78,20 @@ def _block(heading: str, items: list[dict], now: datetime) -> str:
     return "\n".join(lines)
 
 
+_TAG = re.compile(r"<[^>]+>")
+
+
+def vlen(text: str) -> int:
+    """Length as Telegram counts it: visible text only (tags and link targets are
+    free), in UTF-16 units (an emoji counts as 2)."""
+    visible = html.unescape(_TAG.sub("", text))
+    return len(visible.encode("utf-16-le")) // 2
+
+
 def _hard_split(text: str, limit: int) -> list[str]:
     out, cur = [], ""
     for line in text.split("\n"):
-        if cur and len(cur) + len(line) + 1 > limit:
+        if cur and vlen(cur) + vlen(line) + 1 > limit:
             out.append(cur)
             cur = ""
         cur = f"{cur}\n{line}" if cur else line
@@ -91,16 +110,18 @@ def render(groups, ongoing, post_time: datetime, now: datetime, stats: dict) -> 
     footer = (
         f"🆕 جدید این ساعت: {stats['new']}  |  بررسی‌شده: {stats['checked']:,}\n"
         f"🔄 به‌روزرسانی {now:%H:%M} — قیمت‌ها ممکن است تغییر کنند. لینک‌ها مستقیم و بدون افیلیت است."
+        + ("\n" if stats.get("bot") else "")
+        + (f"🎯 آفرهای دلخواه خودت را مستقیم بگیر: @{stats['bot']}" if stats.get("bot") else "")
     )
 
     limit = S.MESSAGE_LIMIT
     pieces = []
     for b in blocks + [footer]:
-        pieces += _hard_split(b, limit) if len(b) > limit else [b]
+        pieces += _hard_split(b, limit) if vlen(b) > limit else [b]
 
     messages, cur = [], header
     for p in pieces:
-        if len(cur) + len(p) + 2 > limit:
+        if vlen(cur) + vlen(p) + 2 > limit:
             messages.append(cur)
             cur = "<b>ادامه…</b>"
         cur += "\n\n" + p

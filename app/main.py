@@ -6,7 +6,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-from . import collector, digest, scoring, state
+from . import bot, collector, delivery, digest, scoring, state
 from . import settings as S
 from .telegram import Telegram, TelegramError
 
@@ -79,48 +79,71 @@ def run_digest(force: bool = False) -> int:
     sent = state.read("offers_sent.json", {})
 
     scored = scoring.select(offers, history, today, now.timestamp())
+    personal = scoring.select(offers, history, today, now.timestamp(), channel=False)
     new, ongoing = digest.split_new_ongoing(scored, sent, now.timestamp())
     log.info("products=%s eligible=%s new=%s ongoing=%s", len(offers), len(scored), len(new), len(ongoing))
 
     # history is data collection: always recorded, also in preview mode
     state.record_history(history, offers, today)
     state.write("price_history.json", history)
+    state.write("latest_offers.json", delivery.compact_offers(personal))
 
+    code, posted = 0, False
     if len(new) < S.MIN_NEW_TO_POST and not force:
-        log.info("only %s new offers - skipping this hour", len(new))
-        state.prune_sent(sent, now.timestamp())
-        state.write("offers_sent.json", sent)
-        mark_slot(post_time, posted=False)
-        return 0
+        log.info("only %s new offers - no channel post this hour", len(new))
+    else:
+        try:
+            bot_name = tg.get_me().get("username", "")
+        except TelegramError:
+            bot_name = ""
+        groups = digest.group(new)
+        shown = [o for _, items in groups for o in items]
+        messages = digest.render(groups, ongoing, post_time, now,
+                                 {"new": len(new), "checked": len(offers), "bot": bot_name})
+        if not S.LIVE:
+            messages[0] = "🧪 <b>پیش‌نمایش (حالت آزمایشی، به کانال ارسال نشد)</b>\n\n" + messages[0]
 
-    groups = digest.group(new)
-    shown = [o for _, items in groups for o in items]
-    messages = digest.render(groups, ongoing, post_time, now,
-                             {"new": len(new), "checked": len(offers)})
-    if not S.LIVE:
-        messages[0] = "🧪 <b>پیش‌نمایش (حالت آزمایشی، به کانال ارسال نشد)</b>\n\n" + messages[0]
+        # land exactly on the hour
+        wait = (post_time - datetime.now(S.TZ)).total_seconds()
+        if S.LIVE and 0 < wait <= S.MAX_WAIT_FOR_HOUR:
+            log.info("waiting %.0fs to post at %s", wait, post_time.strftime("%H:%M"))
+            time.sleep(wait)
 
-    # land exactly on the hour
-    wait = (post_time - datetime.now(S.TZ)).total_seconds()
-    if S.LIVE and 0 < wait <= S.MAX_WAIT_FOR_HOUR:
-        log.info("waiting %.0fs to post at %s", wait, post_time.strftime("%H:%M"))
-        time.sleep(wait)
+        try:
+            tg.send_all(destination, messages)
+            posted = True
+            if S.LIVE:
+                ts = time.time()
+                for o in shown:
+                    sent[str(o["dkp"])] = {"t": ts, "p": o["price"]}
+            log.info("posted %s message(s) to %s", len(messages), "channel" if S.LIVE else "admin preview")
+        except TelegramError as exc:
+            alert(tg, f"ارسال ناموفق: {exc}")
+            code = 3
 
-    try:
-        tg.send_all(destination, messages)
-    except TelegramError as exc:
-        alert(tg, f"ارسال ناموفق: {exc}")
-        return 3
-
-    if S.LIVE:
-        ts = time.time()
-        for o in shown:
-            sent[str(o["dkp"])] = {"t": ts, "p": o["price"]}
     state.prune_sent(sent, time.time())
     state.write("offers_sent.json", sent)
-    mark_slot(post_time, posted=True)
-    log.info("posted %s message(s) to %s", len(messages), "channel" if S.LIVE else "admin preview")
-    return 0
+
+    # personal rules: independent of the channel post
+    try:
+        delivery.deliver(tg, personal, datetime.now(S.TZ), post_time)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("personal delivery failed")
+        alert(tg, f"ارسال شخصی با خطا متوقف شد: {type(exc).__name__}")
+
+    if code == 0:
+        mark_slot(post_time, posted=posted)
+    return code
+
+
+def run_bot() -> int:
+    if S.PAUSED:
+        log.info("PAUSED is true - nothing to do")
+        return 0
+    if not S.BOT_TOKEN:
+        log.error("BOT_TOKEN is not set")
+        return 1
+    return bot.run(Telegram(S.BOT_TOKEN))
 
 
 def main() -> int:
@@ -130,6 +153,8 @@ def main() -> int:
     try:
         if job == "digest":
             return run_digest(force)
+        if job == "bot":
+            return run_bot()
         log.error("unknown job: %s", job)
         return 1
     except Exception as exc:  # noqa: BLE001

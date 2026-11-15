@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "Which job to run (digest)"
+        description: "Which job to run: digest (hourly post) or bot (read messages)"
         default: "digest"
         required: true
       force:
@@ -21,15 +21,18 @@ on:
 permissions:
   contents: read
 
-# Two runs never overlap, so they never fight over the state files.
+# Two runs of the SAME job never overlap. digest and bot run side by side:
+# they write different state files, so their pushes never conflict.
 concurrency:
-  group: deals-bot
+  group: deals-bot-${{ inputs.job || 'digest' }}
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Check out this repository
         uses: actions/checkout@v4
@@ -72,6 +75,8 @@ jobs:
       - name: Save state
         if: always()
         working-directory: state
+        env:
+          JOB: ${{ inputs.job || 'digest' }}
         run: |
           git config user.name "deals-bot"
           git config user.email ""   # no address needed for the private state repo
@@ -80,8 +85,12 @@ jobs:
             echo "state unchanged"
             exit 0
           fi
-          git commit -m "state $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push || (git pull --rebase && git push)
+          git commit -m "state ${JOB:-digest} $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase || exit 1
+          done
+          exit 1
 
       # Alerts the admin when something failed OUTSIDE our own code
       # (expired token, empty state repo, GitHub outage). Failures inside the
