@@ -37,13 +37,13 @@ def test_router_switches_instantly_and_falls_back(monkeypatch):
 
     def fake(p, key, model, prompt):
         tried.append(model)
-        if p["kind"] == "gemini":
+        if p["name"] == "groq":
             raise TimeoutError
         return "این یکی را از دست نده."
 
     monkeypatch.setattr(nudge, "_call", fake)
     assert nudge.llm_line({"discount": 33}) == "این یکی را از دست نده."
-    assert tried == ["g-a", "g-b", "q-a"]
+    assert tried == ["q-a", "g-a"]          # groq failed -> next provider at once
     monkeypatch.setattr(nudge, "_call", lambda *a: (_ for _ in ()).throw(RuntimeError()))
     nudge._down.clear()
     assert nudge.offer_line(_o(stock=2), NOW_TS)  # all down -> rule line, never empty

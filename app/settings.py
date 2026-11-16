@@ -112,9 +112,9 @@ LLM_MODELS_PER_PROVIDER = 2  # how many models of one provider to try before mov
 #   gemini     - free tier of Google AI Studio (flash / flash-lite text models only)
 #   groq       - free plan (no card on the account = nothing can be charged)
 #   openrouter - only models whose id ends in ":free" AND whose listed price is 0
-# Tried top to bottom; a provider is used only if its key secret is set.
+# Tried top to bottom (fastest free first; Gemini's free thinking models often time out);
+# a provider is used only if its key secret is set.
 LLM_PROVIDERS = [
-    {"name": "gemini", "kind": "gemini", "key_env": "GEMINI_API_KEY"},
     {"name": "groq", "kind": "openai", "key_env": "GROQ_API_KEY",
      "url": "https://api.groq.com/openai/v1/chat/completions",
      "models_url": "https://api.groq.com/openai/v1/models",
@@ -123,6 +123,7 @@ LLM_PROVIDERS = [
      "url": "https://openrouter.ai/api/v1/chat/completions",
      "models_url": "https://openrouter.ai/api/v1/models",
      "prefer": ["llama", "gemma", "qwen", "mistral", "deepseek", "gpt-oss"]},
+    {"name": "gemini", "kind": "gemini", "key_env": "GEMINI_API_KEY"},
     {"name": "cloudflare", "kind": "cloudflare", "model": "@cf/meta/llama-3.1-8b-instruct",
      "key_env": "CF_API_TOKEN", "account_env": "CF_ACCOUNT_ID"},
 ]
