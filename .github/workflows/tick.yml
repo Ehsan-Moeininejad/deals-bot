@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "Which job to run: digest (hourly post) or bot (read messages)"
+        description: "Which job to run: digest (hourly post), bot (read messages) or codes (post discount codes now)"
         default: "digest"
         required: true
       force:

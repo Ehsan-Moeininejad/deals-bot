@@ -208,10 +208,11 @@ def _post(tg: Telegram, chat: str, items: list[dict], heading: str, line: str, m
         state.write("vouchers_posts.json", posts)
 
 
-def roundup(tg: Telegram, vouchers: list[dict], now: datetime, bot_name: str = "") -> bool:
+def roundup(tg: Telegram, vouchers: list[dict], now: datetime, bot_name: str = "",
+            force: bool = False) -> bool:
     """All active codes in one tidy post (only when nothing new came this hour)."""
     slot = now.strftime("%Y-%m-%dT%H")
-    if state.read("vouchers_roundup.json", {}).get("slot") == slot:
+    if state.read("vouchers_roundup.json", {}).get("slot") == slot and not force:
         return False
     heading = (f"🎟 <b>کدهای تخفیف فعال دیجی‌کالا</b>\n"
                f"{RLM}🕒 {now:%H:%M} · ✅ {len(vouchers)} کد" + ("" if S.LIVE else " · 🧪 پیش‌نمایش"))
@@ -226,10 +227,14 @@ def roundup(tg: Telegram, vouchers: list[dict], now: datetime, bot_name: str = "
     return True
 
 
-def run(tg: Telegram, users: dict, now: datetime | None = None, bot_name: str = "") -> int:
-    """Check the voucher center and post new codes. Returns the number of new vouchers."""
+def run(tg: Telegram, users: dict, now: datetime | None = None, bot_name: str = "",
+        force: bool = False) -> int:
+    """Check the voucher center and post new codes. Returns the number of new vouchers.
+
+    force=True (workflow job "codes"): check now, and post all active codes if none is new.
+    """
     now = now or datetime.now(S.TZ)
-    if not due(now):
+    if not force and not due(now):
         return 0
     vouchers = fetch()
     if vouchers is None:
@@ -247,8 +252,8 @@ def run(tg: Telegram, users: dict, now: datetime | None = None, bot_name: str = 
     state.write("vouchers_slot.json", {"slot": now.strftime("%Y-%m-%dT%H")})
     if not new:
         log.info("vouchers: %s on the page, none new", len(vouchers))
-        if vouchers and now.hour in S.VOUCHER_ROUNDUP_HOURS:
-            roundup(tg, vouchers, now, bot_name)
+        if vouchers and (force or now.hour in S.VOUCHER_ROUNDUP_HOURS):
+            roundup(tg, vouchers, now, bot_name, force)
         return 0
 
     heading = (f"🎟 <b>{len(new)} کد تخفیف تازه</b> · دیجی‌کالا\n"

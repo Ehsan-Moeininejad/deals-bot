@@ -163,6 +163,22 @@ def run_bot() -> int:
     return bot.run(Telegram(S.BOT_TOKEN))
 
 
+def run_codes() -> int:
+    """Post the discount codes now (new ones, or all active ones if none is new)."""
+    if not S.BOT_TOKEN:
+        log.error("BOT_TOKEN is not set")
+        return 1
+    tg = Telegram(S.BOT_TOKEN)
+    try:
+        name = tg.get_me().get("username", "")
+    except TelegramError:
+        name = ""
+    users = state.read("users.json", {})
+    from . import vouchers as V
+    V.run(tg, users, bot_name=name, force=True)
+    return 0
+
+
 def main() -> int:
     args = sys.argv[1:]
     job = (args[0] if args else "") or "digest"
@@ -172,6 +188,8 @@ def main() -> int:
             return run_digest(force)
         if job == "bot":
             return run_bot()
+        if job == "codes":
+            return run_codes()
         log.error("unknown job: %s", job)
         return 1
     except Exception as exc:  # noqa: BLE001

@@ -121,7 +121,24 @@ def test_roundup_when_nothing_new(tmp_state, monkeypatch):
     monkeypatch.setattr(V, "fetch", lambda: items)
     V.run(TG(), {}, now=datetime(2026, 11, 16, 9, 31))             # first time: new codes
     assert len(sent) == 1
-    V.run(TG(), {}, now=datetime(2026, 11, 16, 10, 31))            # nothing new, not a roundup hour
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 11, 31))            # nothing new, not a roundup hour
     assert len(sent) == 1
-    V.run(TG(), {}, now=datetime(2026, 11, 16, 11, 31))            # roundup hour: all active codes
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 14, 31))            # roundup hour: all active codes
+    assert len(sent) == 2 and "کدهای تخفیف فعال" in sent[1][0]
+
+
+def test_forced_run_posts_now(tmp_state, monkeypatch):
+    from datetime import datetime
+    sent = []
+
+    class TG(FakeTG):
+        def send_all(self, chat_id, messages, last_markup=None):
+            sent.append(messages)
+            return [5]
+
+    items = V.parse(WIDGETS)
+    monkeypatch.setattr(V, "fetch", lambda: items)
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 9, 31))
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 9, 40))                 # same hour: nothing
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 9, 41), force=True)    # forced: roundup now
     assert len(sent) == 2 and "کدهای تخفیف فعال" in sent[1][0]
