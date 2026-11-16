@@ -208,6 +208,24 @@ def _post(tg: Telegram, chat: str, items: list[dict], heading: str, line: str, m
         state.write("vouchers_posts.json", posts)
 
 
+def roundup(tg: Telegram, vouchers: list[dict], now: datetime, bot_name: str = "") -> bool:
+    """All active codes in one tidy post (only when nothing new came this hour)."""
+    slot = now.strftime("%Y-%m-%dT%H")
+    if state.read("vouchers_roundup.json", {}).get("slot") == slot:
+        return False
+    heading = (f"🎟 <b>کدهای تخفیف فعال دیجی‌کالا</b>\n"
+               f"{RLM}🕒 {now:%H:%M} · ✅ {len(vouchers)} کد" + ("" if S.LIVE else " · 🧪 پیش‌نمایش"))
+    destination = S.CHANNEL_ID if S.LIVE else S.ADMIN_CHAT_ID
+    try:
+        _post(tg, destination, vouchers, heading, "قبل از پرداخت، کد دسته‌ی خریدت را امتحان کن.", channel_markup(bot_name))
+    except TelegramError as exc:
+        log.warning("voucher roundup failed (%s)", exc.code)
+        return False
+    state.write("vouchers_roundup.json", {"slot": slot})
+    log.info("vouchers: roundup of %s active codes posted", len(vouchers))
+    return True
+
+
 def run(tg: Telegram, users: dict, now: datetime | None = None, bot_name: str = "") -> int:
     """Check the voucher center and post new codes. Returns the number of new vouchers."""
     now = now or datetime.now(S.TZ)
@@ -229,6 +247,8 @@ def run(tg: Telegram, users: dict, now: datetime | None = None, bot_name: str = 
     state.write("vouchers_slot.json", {"slot": now.strftime("%Y-%m-%dT%H")})
     if not new:
         log.info("vouchers: %s on the page, none new", len(vouchers))
+        if vouchers and now.hour in S.VOUCHER_ROUNDUP_HOURS:
+            roundup(tg, vouchers, now, bot_name)
         return 0
 
     heading = (f"🎟 <b>{len(new)} کد تخفیف تازه</b> · دیجی‌کالا\n"

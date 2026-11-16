@@ -106,3 +106,22 @@ def test_codes_only_between_8_and_midnight(tmp_state):
     assert not V.due(datetime(2026, 11, 16, 0, 35))
     assert not V.due(datetime(2026, 11, 16, 7, 40))
     assert V.due(datetime(2026, 11, 16, 8, 31)) and V.due(datetime(2026, 11, 16, 23, 31))
+
+
+def test_roundup_when_nothing_new(tmp_state, monkeypatch):
+    from datetime import datetime
+    sent = []
+
+    class TG(FakeTG):
+        def send_all(self, chat_id, messages, last_markup=None):
+            sent.append(messages)
+            return [5]
+
+    items = V.parse(WIDGETS)
+    monkeypatch.setattr(V, "fetch", lambda: items)
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 9, 31))             # first time: new codes
+    assert len(sent) == 1
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 10, 31))            # nothing new, not a roundup hour
+    assert len(sent) == 1
+    V.run(TG(), {}, now=datetime(2026, 11, 16, 11, 31))            # roundup hour: all active codes
+    assert len(sent) == 2 and "کدهای تخفیف فعال" in sent[1][0]

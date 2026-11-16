@@ -6,7 +6,9 @@ Each offer is a plain dict (see parse_product). Nothing is stored here.
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import requests
@@ -150,6 +152,97 @@ def parse_product(p: dict) -> dict:
     }
 
 
+def parse_amazing(d: dict, now_ts: float | None = None) -> dict:
+    """A product from the amazing/v1 listing (slim: no brand/category/seller)."""
+    price = d.get("price") or {}
+    rating = d.get("rating") or {}
+    img = d.get("image") or {}
+    timer = _int(price.get("discount_timer"))
+    now_ts = now_ts if now_ts is not None else time.time()
+    return {
+        "dkp": d.get("id"),
+        "title": (d.get("title_fa") or d.get("title") or "").strip(),
+        "brand": "", "cat1": "", "cat2": "", "seller": "",
+        "price": _toman(price.get("selling_price")),
+        "rrp": _toman(price.get("rrp_price")),
+        "declared_discount": price.get("discount_percent") or 0,
+        "status": d.get("status") or "",
+        "rating": _rating5(rating.get("rate")),
+        "votes": int(rating.get("count") or 0),
+        "ends_at": now_ts + timer if timer and timer > 0 else None,
+        "lightning": bool(price.get("is_lightening_deal")),
+        "image": (img.get("url") if isinstance(img, dict) else "") or "",
+        "seller_stars": None, "official": False, "jet": False, "nearby": False,
+        "dk_stock": False, "lowest_30d": False,
+        "sold_pct": _int(price.get("sold_percentage")),
+        "stock": _int(price.get("marketable_stock")),
+        "detail": False,
+        "url": f"https://www.digikala.com/product/dkp-{d.get('id')}/" if d.get("id") else "",
+    }
+
+
+def amazing_listing(data: dict) -> tuple[list[dict], dict]:
+    """(product dicts, pager) from an amazing/v1 page."""
+    for w in data.get("widgets") or []:
+        inner = w.get("data") or {}
+        if isinstance(inner.get("widgets"), list) and inner.get("pager"):
+            items = [x.get("data") or {} for x in inner["widgets"] if x.get("type") == "product"]
+            return [x for x in items if x.get("id")], inner["pager"]
+    return [], {}
+
+
+DETAIL_KEYS = ("brand", "cat1", "cat2", "seller", "seller_stars", "official", "jet",
+               "nearby", "dk_stock", "lowest_30d")
+_local = threading.local()
+
+
+def _detail(dkp) -> dict | None:
+    session = getattr(_local, "session", None)
+    if session is None:
+        session = _local.session = requests.Session()
+        session.headers.update(HEADERS)
+    for attempt in range(1, 3):
+        try:
+            r = session.get(S.DETAIL_URL.format(id=dkp), timeout=S.REQUEST_TIMEOUT)
+            if r.status_code == 429:
+                time.sleep(3 * attempt)
+                continue
+            r.raise_for_status()
+            product = (r.json().get("data") or {}).get("product") or {}
+            return parse_product(product) if product.get("id") else None
+        except Exception:  # noqa: BLE001
+            time.sleep(attempt)
+    return None
+
+
+def complete(offers: list[dict]) -> int:
+    """Fill brand, category, seller and delivery facts from the product API, best first."""
+    todo = sorted((o for o in offers if not o.get("detail")),
+                  key=lambda o: -(o.get("declared_discount") or 0))
+    if not todo:
+        return 0
+    start, done = time.time(), 0
+
+    def one(o):
+        if time.time() - start > S.DETAIL_BUDGET:
+            return False
+        det = _detail(o["dkp"])
+        if not det:
+            return False
+        for k in DETAIL_KEYS:
+            o[k] = det.get(k, o.get(k))
+        if det.get("stock") is not None and o.get("stock") is None:
+            o["stock"] = det["stock"]
+        o["image"] = o.get("image") or det.get("image", "")
+        o["detail"] = True
+        return True
+
+    with ThreadPoolExecutor(max_workers=S.DETAIL_WORKERS) as pool:
+        done = sum(1 for ok in pool.map(one, todo) if ok)
+    log.info("details: %s/%s products completed in %.0fs", done, len(todo), time.time() - start)
+    return done
+
+
 def find_listing(data: dict, list_key: str | None) -> dict:
     """Return the {products, pager} block of a response.
 
@@ -184,6 +277,7 @@ def crawl() -> tuple[list[dict], int]:
             first_expected = expected
         log.info("source %s: %s new unique products", src["name"], len(found))
     log.info("collected %s unique products from %s source(s)", len(offers), len(S.SOURCES))
+    complete(offers)
     return offers, first_expected
 
 
@@ -198,21 +292,26 @@ def crawl_source(session: requests.Session, src: dict, seen: set) -> tuple[list[
             if total_pages and page > total_pages:
                 break
             continue
-        listing = find_listing(data, src.get("list_key"))
-        products = listing.get("products") or []
-        pager = listing.get("pager") or {}
+        if src.get("kind") == "amazing":
+            products, pager = amazing_listing(data)
+        else:
+            listing = find_listing(data, src.get("list_key"))
+            products = listing.get("products") or []
+            pager = listing.get("pager") or {}
         if total_pages is None and pager.get("total_pages"):
             total_pages = int(pager["total_pages"])
             expected = int(pager.get("total_items") or 0)
             log.info("%s pager: %s products, %s pages", src["name"], expected, total_pages)
         if not products:
+            if page == 1:
+                log.warning("%s: page 1 has no products (keys: %s)", src["name"], list(data)[:5])
             break
         for raw in products:
             dkp = raw.get("id")
             if dkp in seen:
                 continue
             seen.add(dkp)
-            item = parse_product(raw)
+            item = parse_amazing(raw) if src.get("kind") == "amazing" else parse_product(raw)
             item["source"] = src["name"]
             offers.append(item)
         if total_pages and page >= total_pages:

@@ -22,9 +22,15 @@ STATE_DIR = os.environ.get("STATE_DIR", "state")
 #   {"name": "bf-mobile", "label": "بلک فرایدی", "url": "<API url of the landing>",
 #    "list_key": "<key of the product list inside data, or None to auto-detect>"}
 SOURCES = [
-    {"name": "incredible", "label": "", "url": "https://api.digikala.com/v1/incredible-offers/",
-     "list_key": "incredible_products_list"},
+    # 2026-11-16: Digikala moved the list to amazing/v1 (the old v1/incredible-offers/ now
+    # returns only a banner). Listing items are slim, so each product is completed from
+    # the product API below (brand, category, seller, delivery).
+    {"name": "incredible", "label": "", "kind": "amazing",
+     "url": "https://api.digikala.com/amazing/v1/page/0"},
 ]
+DETAIL_URL = "https://api.digikala.com/product/v1/products/{id}/"
+DETAIL_WORKERS = 6          # parallel product-detail requests
+DETAIL_BUDGET = 300         # seconds; products not completed in time keep the listing data
 API_URL = SOURCES[0]["url"]  # kept for backward compatibility
 REQUEST_TIMEOUT = 20
 DELAY_BETWEEN_PAGES = 0.7
@@ -62,6 +68,7 @@ RESEND_HOURS = 24           # an offer is not re-posted within this window...
 REPRICE_DROP = 0.05         # ...unless its price dropped by at least 5%
 QUIET_HOURS = range(1, 8)   # channel + personal: from 08:00 to the 00:00 post (last one), nothing 01:00-07:59
 VOUCHER_QUIET_HOURS = range(0, 8)  # codes: 08:30 ... 23:30 (none after midnight)
+VOUCHER_ROUNDUP_HOURS = [11, 20]   # if no new codes, a roundup of all active codes at HH:30 (codes rarely change)
 MESSAGE_LIMIT = 3800        # Telegram's hard limit is 4096
 SEND_DELAY = 1.5            # seconds between messages
 MAX_WAIT_FOR_HOUR = 15 * 60 # wait at most this long to land exactly on the hour
